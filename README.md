@@ -10,14 +10,44 @@ STAMP is being developed as a product for creating and managing verifiable digit
 - The browser fingerprint tool does not upload file contents.
 - Account UI calls a real API and deliberately refuses fake OTP or fake payment confirmation when the API is not configured.
 
-### Legacy backend scaffold (not deployed; migration pending)
+### Backend foundation added
 - Cloudflare Worker + Hono API in `worker/index.ts`.
 - Cloudflare D1 initial schema in `worker/migrations/0001_initial.sql`.
 - Email OTP through Resend and WhatsApp OTP through the official Meta WhatsApp Cloud API.
-- The current branch includes the initial custom OTP/session implementation; PR #10 is hardening request limits, attempt ceilings, and atomic one-time consumption. Its migration is not deployed.
-- Stripe Checkout session creation for monthly, yearly and lifetime price IDs.
-- Payment entitlements are **not activated**: the Stripe webhook currently fails closed until signature verification and event reconciliation are implemented.
+- Hashed OTP storage, 10-minute expiry, per-email/phone/IP request throttling, a five-attempt verification ceiling, atomic one-time code consumption, hashed opaque sessions, and D1-backed account lookup.
+- Binance Pay checkout via the official Merchant API, with server-side HMAC request signing and RSA/SHA-256 webhook verification.
+- InstaPay direct-transfer orders in EGP at a fixed 55 EGP/USD rate, with recipient data stored as a server secret, copy-only delivery to the authenticated payer, transfer-reference submission, and an authenticated internal review endpoint.
+- Binance subscription activation occurs only after a signed, amount-matched PAY_SUCCESS webhook. InstaPay activation occurs only after an administrator approves the submitted transfer reference.
+- Payment provider credentials and recipient details are server secrets; never place them in Vite environment variables or frontend code.
 - GitHub repository provisioning, server-side evidence commits, independent trusted timestamping, and SEO/video generation are not yet implemented.
+
+
+## Direct payment methods
+
+The subscription page offers two payment actions per plan:
+
+- **Binance Pay (USDT):** the backend creates a merchant checkout order using the official Binance Pay API. The browser receives only the Binance checkout URL, not a recipient UID. Configure the merchant API key/secret and webhook public key as server-side secrets. The subscription is activated only after the signed Binance webhook is verified and the received amount/currency matches the pending order.
+- **InstaPay (EGP):** the backend calculates EGP at the fixed rate of **55 EGP per USD** (monthly 275 EGP, yearly 2,750 EGP, lifetime 5,500 EGP). The recipient IPA/mobile value is stored only in the backend secret INSTAPAY_RECIPIENT; it is returned only to the authenticated payer after they create an InstaPay order and is never rendered as text. The page offers a copy action, then asks for the transfer reference. The order remains submitted until an administrator checks the actual incoming transfer and approves it.
+
+### Required server secrets
+
+Configure these as Worker secrets (not repository variables and never VITE_*):
+- BINANCE_PAY_API_KEY
+- BINANCE_PAY_SECRET_KEY
+- BINANCE_PAY_PUBLIC_KEY (the Binance Pay webhook verification public key/certificate)
+- BINANCE_PAY_WEBHOOK_CERT_SN (the matching Binance Pay webhook certificate serial)
+- INSTAPAY_RECIPIENT (the recipient IPA or registered mobile number)
+- ADMIN_REVIEW_SECRET (a long random secret used only by the internal InstaPay review endpoint)
+
+Set the Binance Pay webhook URL to /api/billing/binance/webhook. Obtain merchant credentials and the webhook public key from the Binance Pay Merchant dashboard. A personal Binance UID alone is not a substitute for merchant API credentials and signed payment notifications.
+
+### InstaPay manual review endpoint
+
+POST /api/admin/payments/instapay/review requires the X-Admin-Review-Secret header and JSON { "orderId": "...", "approve": true|false }. Keep this secret in a trusted admin tool only; never call this endpoint from the public frontend. Approval marks the payment paid and activates the plan. Rejection leaves the subscription inactive. InstaPay does not provide a public merchant API for third-party apps to independently confirm a transfer, so the operator must verify the bank/InstaPay incoming transaction before approval. The customer-submitted reference alone is not proof of payment.
+
+### Important
+
+The recipient value is hidden from the public subscription page and is not included in the frontend bundle. It is intentionally delivered only to the authenticated payer's checkout request so they can copy it into InstaPay; a payer can still inspect data delivered to their own browser. Never promise that the recipient identifier is invisible to the person who must send the transfer. Do not activate subscriptions from screenshots, client-side status, or redirect URLs.
 
 ## Frontend deployment
 
@@ -26,27 +56,42 @@ GitHub Pages hosts only the static Vite frontend:
 
 GitHub Actions builds and deploys it on pushes to `main`.
 
-## Current release boundary
+## Backend deployment requirements
 
-The Worker is not deployed, no production D1 database is provisioned, and no provider credentials are configured. Therefore the published site is a static frontend preview; account registration, OTP delivery, billing, and customer provisioning are not live services.
+GitHub Pages cannot execute the Worker or securely store server credentials. The current API adapter still targets Cloudflare Worker/D1 and is not deployed. This is a legacy runtime path; it must be migrated to the approved self-hosted open-source runtime before production, rather than treating a managed Cloudflare account as a permanent required dependency. To test the existing adapter only:
 
-The current Worker code still contains legacy adapters for Cloudflare D1, Resend, Meta WhatsApp Cloud API and Stripe. These are not approved as mandatory dependencies under the project's operating policy. Do not deploy this legacy adapter as a production service or configure paid provider accounts as the next step.
+1. Create a Cloudflare D1 database named `stamp-production`.
+2. Replace the placeholder `database_id` in `wrangler.jsonc` with the real D1 database ID.
+3. Set `SITE_ORIGIN` to the exact deployed Pages origin.
+4. Apply the migration:
+   ```bash
+   npm install
+   npm run db:remote
+   ```
+5. Add Worker secrets using Wrangler (never commit secrets):
+   ```bash
+   npx wrangler secret put SESSION_SECRET
+   npx wrangler secret put RESEND_API_KEY
+   npx wrangler secret put EMAIL_FROM
+   npx wrangler secret put META_ACCESS_TOKEN
+   npx wrangler secret put META_PHONE_NUMBER_ID
+   npx wrangler secret put BINANCE_PAY_API_KEY
+   npx wrangler secret put BINANCE_PAY_SECRET_KEY
+   npx wrangler secret put BINANCE_PAY_PUBLIC_KEY
+   npx wrangler secret put BINANCE_PAY_WEBHOOK_CERT_SN
+   npx wrangler secret put INSTAPAY_RECIPIENT
+   npx wrangler secret put ADMIN_REVIEW_SECRET
+   ```
+   Legacy note: the current account OTP implementation still depends on Resend and the official Meta WhatsApp Cloud API. These are not open-source self-hosted services; migrate this authentication delivery path before claiming the full platform is independent of commercial providers. Configure and approve the WhatsApp template named `stamp_otp` only if testing this legacy adapter.
+6. Deploy the Worker:
+   ```bash
+   npm run api:deploy
+   ```
+7. Build the frontend with `VITE_API_BASE_URL` set to the Worker origin and publish the new Pages build.
 
-## Target self-hosted architecture
+**Important browser-session constraint:** the current GitHub Pages origin (`github.io`) and a default Worker origin (`workers.dev`) are cross-site. Although the cookie is configured with `SameSite=None; Secure`, browsers that block third-party cookies may not persist or send the session cookie. Do not launch paid account access on this split-origin setup. Before production, use a custom domain with the frontend and API under the same site (for example, `app.example.com` and `api.example.com`) or move the frontend and API behind a same-origin Cloudflare deployment. Verify login, refresh, and logout on real mobile browsers.
 
-The implementation plan is documented in [Open-source operating policy and target architecture](docs/OPEN_SOURCE_ALTERNATIVES.md).
-
-The target is deliberately small:
-- Keep the existing React/Vite frontend.
-- Keep Hono and port its API to standard Node.js LTS.
-- Use a local SQLite database for the initial single-instance deployment.
-- Keep sessions server-side, hashed, revocable and protected by atomic OTP/rate-limit logic.
-- Make SMTP an optional adapter; do not require Resend or WhatsApp.
-- Start subscriptions as pending and activate only after an auditable admin reconciliation of an actual bank/wallet transfer.
-- Keep OpenTimestamps as an optional proof format; it is not legal ownership certification.
-- Deploy the API only when an owner-controlled server or VPS is available.
-
-GitHub Pages and GitHub Actions are not a persistent API host or production database. No always-on backend is claimed until the server, database, secrets, backups and smoke tests exist.
+Configure the Binance Pay webhook at /api/billing/binance/webhook. Do not use a browser redirect as proof of payment. InstaPay remains manual-review until the incoming transfer is verified against the bank statement.
 
 ## Plan definitions
 
@@ -61,7 +106,7 @@ SEO automation, video generation and social-platform publishing are product requ
 - A SHA-256 digest helps establish file integrity against a known digest; it does not independently prove authorship, legal ownership or creation time.
 - The current browser receipt uses device time, not a trusted timestamp authority.
 - Do not upload private source files or credentials to a public repository.
-- No GitHub token, Resend key, Meta token, Stripe secret or session secret belongs in frontend code.
+- No GitHub token, Resend key, Meta token, Binance secret, InstaPay recipient identifier, admin review secret or session secret belongs in frontend code.
 - Do not advertise the platform as providing legal certification until independent timestamping, immutable evidence records and the applicable legal process have been reviewed.
 
 ## OpenTimestamps proof (GitHub Actions)
