@@ -126,6 +126,8 @@ app.post('/api/billing/intent', async c => {
   const merchantTradeNo=id.replace(/-/g,'').slice(0,32)
   if (method==='binance') {
     if (!c.env.BINANCE_PAY_API_KEY || !c.env.BINANCE_PAY_SECRET_KEY) return json('الدفع عبر Binance Pay غير مهيأ بعد. لم يتم إنشاء طلب أو تحصيل أي مبلغ.',503)
+    await c.env.DB.prepare('INSERT INTO payment_orders(id,user_id,merchant_trade_no,plan,method,amount_minor,currency,usd_amount_cents,exchange_rate,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+      .bind(id,c.get('userId'),merchantTradeNo,plan,'binance',usd*100,'USDT',usd*100,55,'pending',now,now).run()
     const timestamp=String(Date.now()), nonce=crypto.randomUUID().replace(/-/g,'')
     const payload=JSON.stringify({
       env:{terminalType:'WEB'},merchantTradeNo,orderAmount:usd,currency:'USDT',
@@ -140,8 +142,8 @@ app.post('/api/billing/intent', async c => {
     if (!response.ok || result.status!=='SUCCESS' || !result.data?.checkoutUrl || !result.data?.prepayId) return json('تعذر إنشاء طلب Binance Pay. لم يتم تفعيل الاشتراك.',502)
     let checkoutUrl=''
     try { const url=new URL(result.data.checkoutUrl); if(url.protocol!=='https:'||url.hostname!=='pay.binance.com') throw new Error(); checkoutUrl=url.toString() } catch { return json('رابط الدفع الذي أعادته Binance غير صالح.',502) }
-    await c.env.DB.prepare('INSERT INTO payment_orders(id,user_id,merchant_trade_no,plan,method,amount_minor,currency,usd_amount_cents,exchange_rate,status,provider_order_id,checkout_url,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-      .bind(id,c.get('userId'),merchantTradeNo,plan,method,usd*100,'USDT',usd*100,55,'pending',result.data.prepayId,checkoutUrl,now,now).run()
+    await c.env.DB.prepare('UPDATE payment_orders SET provider_order_id=?,checkout_url=?,updated_at=? WHERE id=? AND status=\'pending\'')
+      .bind(result.data.prepayId,checkoutUrl,Math.floor(Date.now()/1000),id).run()
     return c.json({orderId:id,method,amount:usd,currency:'USDT',checkoutUrl})
   }
   if (!c.env.INSTAPAY_RECIPIENT) return json('بيانات استقبال InstaPay غير مهيأة على الخادم. لم يتم إنشاء طلب.',503)
