@@ -1,97 +1,133 @@
-# STAMP — Open-source alternatives and implementation decisions
+# STAMP — Open-source operating policy and target architecture
 
 Research date: 2026-10-31
 
-This document records alternatives checked against their upstream GitHub repositories and official documentation. "Open source" describes the software license; it does not imply free compute, free outbound email, free payment processing, or that merchant accounts can be created without the account owner.
+## Binding operating policy
 
-## Decisions for the MVP
+STAMP must prefer auditable, self-hostable open-source components. Before adopting a repository, record its exact upstream, license, maintenance signals, security policy, dependency footprint, commercial-use rights, resource requirements, and migration/exit path.
 
-| Capability | Selected path | Why | Remaining operational dependency |
+Open-source code does not mean free hosting, free email delivery, free WhatsApp/SMS, free payment processing, or free Bitcoin anchoring. No provider is to become a mandatory dependency merely because its free tier exists today.
+
+Do not add duplicate products for the same capability. Do not place production secrets in GitHub. Do not give agents unrestricted repository or deployment credentials. Changes must be isolated on branches, tested, and merged only after checks pass.
+
+## Current repository inventory (verified from package.json and source)
+
+| Layer | Current implementation | License / operational status | Action |
 |---|---|---|---|
-| Static frontend | GitHub Pages + GitHub Actions | Already connected and current Pages workflow has a successful run | GitHub Pages availability and Actions quotas |
-| API runtime | Keep the small Hono API; Cloudflare Workers + D1 is the current adapter | Smaller operational footprint than a self-hosted app stack | A Cloudflare account, D1 database and Worker deployment authorization |
-| Email OTP | Prefer Appwrite Auth if adopting Appwrite as the complete backend; otherwise retain the current Resend adapter | Appwrite provides email OTP, sessions and user management | Self-hosted Appwrite still needs an SMTP delivery route; a mail server must be configured and deliverability maintained |
-| WhatsApp OTP | Optional second channel via the official Meta WhatsApp Cloud API | Avoids unofficial WhatsApp Web automation and account-ban/security risks | Meta business account, sender number, access token and approved authentication template |
-| OTP fallback | Email-only OTP initially; optional authenticator TOTP as a second-factor alternative | The core account flow can launch without WhatsApp onboarding | TOTP enrollment/recovery flow must be implemented and tested |
-| Subscription state | Keep a small first-party subscription ledger; optionally evaluate Kill Bill later | Kill Bill is capable but oversized for the first release | Real payment collection still requires an eligible gateway/merchant account |
-| Egypt payment fallback | Manual transfer reference + admin review; never auto-activate on a screenshot or browser redirect | Can operate before gateway onboarding and does not need fake checkout | Owner must configure the receiving payment details and an authorized admin |
-| Evidence timestamp | Manual OpenTimestamps proof workflow in GitHub Actions | Free public calendars, open proof format and Bitcoin anchoring; asynchronous confirmation | Maintainer currently submits a SHA-256 digest; customer-facing integration remains future work |
-| Self-hosting option | Coolify on a VPS only if/when a server is available | Apache-2.0 self-hostable deployment control plane | Requires a Linux server, storage, backups, patching and operations |
+| UI | React 18, React DOM, Vite 5, TypeScript | OSS packages; static frontend published on GitHub Pages | Keep for MVP; no framework rewrite |
+| API framework | Hono 4 | MIT; small framework | Keep Hono and move from Worker adapter to standard Node adapter |
+| Runtime | Cloudflare Workers | Managed commercial runtime; current Worker is not deployed | Remove as mandatory runtime |
+| Database | Cloudflare D1 | Managed database; no production DB provisioned | Move to local SQLite on one self-hosted instance |
+| Email OTP | Resend HTTPS API | External commercial provider; no credentials configured | Remove as required dependency |
+| WhatsApp OTP | Meta WhatsApp Cloud API | External platform, business sender and approved template required | Remove as required dependency; no unofficial WhatsApp Web automation |
+| Payments | Stripe Checkout | External payment provider; webhook is deliberately fail-closed | Remove as required dependency; use audited manual transfer verification initially |
+| Evidence timestamp | OpenTimestamps client workflow | Open format/client; public calendars are external infrastructure | Keep optional and label pending vs Bitcoin-confirmed accurately |
+| CI | GitHub Actions | CI only, not a production API/database host | Keep for checks and static Pages deployment |
+| Source control | GitHub repository | Required by the current product's customer-repository concept | Keep; use least-privilege tokens and explicit customer authorization |
 
-## Repositories reviewed
+The existing Worker and D1 code are a legacy adapter, not a deployed production service. The frontend is the only published component. Do not claim that signup, OTP, billing, customer repository provisioning, or the API is live.
 
-### 1. OpenTimestamps — selected for evidence timestamping
-- Client: https://github.com/opentimestamps/opentimestamps-client
-- JavaScript implementation: https://github.com/opentimestamps/javascript-opentimestamps
-- Calendar server: https://github.com/opentimestamps/opentimestamps-server
-- License: LGPL-3.0-or-later for the client/library.
-- The upstream client can stamp files or hashes through public calendar servers without a local Bitcoin node. Proof confirmation is asynchronous; the Bitcoin blockchain provides the eventual timestamp anchor. A proof may need a later upgrade to include the Bitcoin commitment path.
-- Security rule: keep the original file private when desired; submit only its cryptographic digest. Preserve the .ots proof as a separate evidence artifact. Do not label a pending proof as Bitcoin-confirmed.
-- Current implementation: `.github/workflows/ots-proof.yml` accepts a 64-character SHA-256 digest through `workflow_dispatch`, writes a digest-only manifest, stamps it with the pinned `opentimestamps-client==0.8.0`, and uploads the manifest plus `.ots` proof as a 90-day artifact. The original file is never uploaded. This is a maintainer-operated workflow; it is not yet wired into customer accounts. Pending proofs must be upgraded/verified after Bitcoin confirmation.
+## Minimal target architecture
 
-### 2. Appwrite — alternative all-in-one authentication/backend
-- Repository: https://github.com/appwrite/appwrite
-- License in repository: BSD 3-Clause.
-- Official Email OTP documentation: https://appwrite.io/docs/products/auth/email-otp
-- Appwrite supports passwordless email OTP and server-managed sessions. It can also provide database and storage APIs.
-- Caveat: self-hosting Appwrite is a substantial service stack. Email delivery still needs SMTP configuration and reliable mail delivery. It is a viable alternative if we deliberately replace the current Hono/D1 backend; do not run two competing identity systems.
+1. **Frontend:** keep React/Vite static output and GitHub Pages while the UI remains static.
+2. **API:** keep Hono; run it on supported Node.js LTS using the upstream Hono Node server adapter. No Workers-only APIs in application logic.
+3. **Database:** SQLite on the same host for the first single-instance MVP. SQLite source is public domain. Use parameterized statements, explicit migrations, foreign keys, backups, and tested restore procedures. Do not put the live database file in GitHub.
+4. **Sessions:** use secure opaque server-side sessions, hashed at rest, HttpOnly + Secure cookies, short-lived OTP challenges, one-time atomic consumption, rate limits, CSRF/origin controls, and session revocation. Evaluate Better Auth as a candidate before expanding custom auth; do not add it without a migration spike and tests.
+5. **Verification:** no mandatory WhatsApp or SMS dependency. Email delivery can be an optional SMTP adapter. An authenticator-app TOTP factor is a provider-independent option, but it does not verify phone-number ownership. If verified phone ownership is a hard requirement, an official telecom/WhatsApp delivery provider is an unavoidable external dependency and must be explicitly approved.
+6. **Billing:** first release uses a pending subscription record and manual bank/wallet transfer reference, followed by authorized admin reconciliation and an audit event. Never activate from a screenshot or success URL alone. A gateway can be added later as an optional adapter after signed webhook verification and idempotency are tested.
+7. **Evidence:** hash files in the browser; do not upload originals by default. OpenTimestamps is an optional timestamping adapter. Preserve proof files and report states truthfully: local digest, submitted/pending, and Bitcoin-confirmed.
+8. **Operations:** one Docker image or a plain Node process under systemd. Docker Compose is optional for local reproducibility. Coolify is optional only when a server already exists; it does not supply compute.
+9. **Backups/observability:** scheduled SQLite backup with restore test, structured logs with PII/token redaction, health endpoint without secrets, and a simple process supervisor. Do not add a workflow orchestrator until there are real recurring multi-step jobs.
 
-### 3. Coolify — self-hosted compute/deployment control plane
-- Repository: https://github.com/coollabsio/coolify
-- License: Apache-2.0.
-- It deploys applications, databases and services onto infrastructure that we own (VPS, bare metal or another SSH server).
-- Caveat: Coolify is not free compute. It manages a server; it does not supply one. It is the best route if a low-cost VPS becomes available and we want to own the whole stack.
+### Runtime boundary
 
-### 4. Hyperswitch — payment orchestration, not a payment processor
-- Repository: https://github.com/juspay/hyperswitch
-- License: Apache-2.0.
-- It is a substantial Rust payment orchestration stack with integrations to payment service providers.
-- Decision: do not add it to the MVP. It still requires merchant/provider accounts and adds a large operational surface. Revisit only if STAMP later needs multiple payment providers and routing.
+A persistent API requires a machine that remains online and is reachable. GitHub Pages and GitHub Actions do not provide a permanent backend. A self-hosted server may be a VPS or hardware controlled by the owner. No runtime is being declared free until the actual resource and network path are identified.
 
-### 5. Kill Bill — subscription billing engine
-- Repository: https://github.com/killbill/killbill
-- License: Apache-2.0.
-- It supports recurring and one-time billing, invoicing and gateway plugins.
-- Decision: do not add it to the MVP. It manages billing logic but is not itself a payment gateway and still needs a gateway for real collections. Our three fixed plans can be managed with a smaller first-party subscription ledger.
+Coolify's upstream self-hosted guide lists a minimum of 2 CPU cores, 2 GB RAM and 10 GB disk for the control plane; it still requires a server. For the small STAMP MVP, plain Node + SQLite may be lighter than installing Coolify itself.
 
-### 6. listmonk — not an OTP/auth system
-- Repository: https://github.com/knadh/listmonk
+## Candidate upstream projects — evaluated, not all selected
+
+### Hono
+- Upstream: https://github.com/honojs/hono
+- License: MIT.
+- Role: keep the existing framework; use the Node adapter for portability.
+- Decision: selected, subject to a Node runtime integration test.
+
+### Better Auth
+- Upstream: https://github.com/better-auth/better-auth
+- License: MIT (LICENSE.md).
+- Repository is active and documents an Email OTP plugin with configurable attempt limits, OTP expiry, and custom delivery callback.
+- Caveat: Better Auth does not deliver email itself; its OTP plugin requires a sendVerificationOTP implementation. The monorepo and plugin surface are larger than the current custom API.
+- Decision: candidate only. Compare a small SQLite + Hono integration against the hardened existing session flow before choosing. Do not run two identity systems.
+
+### SQLite
+- Upstream: https://github.com/sqlite/sqlite
+- License: public domain.
+- Role: embedded single-host database; no database server or managed account.
+- Caveat: the initial architecture is single-instance. For multi-instance horizontal scaling, plan a deliberate migration to PostgreSQL and test concurrency/backups before scaling.
+
+### Plunk
+- Upstream: https://github.com/useplunk/plunk
 - License: AGPL-3.0.
-- It is a self-hosted mailing-list/newsletter manager backed by PostgreSQL.
-- Decision: not selected for transactional OTP. Its purpose and deployment footprint are broader than this product needs.
+- Role: self-hosted email platform with transactional email and SMTP features.
+- Caveat: this is an application, not a guarantee of inbox delivery. It still needs a properly configured outbound mail path, domain DNS, reputation and operational monitoring. AGPL obligations require review before embedding or modifying it.
+- Decision: not a required dependency for MVP; SMTP is an adapter boundary.
 
-### 7. Official WhatsApp SDK status
-- Meta's former Node.js SDK repository: https://github.com/WhatsApp/WhatsApp-Nodejs-SDK
-- The repository is archived (read-only since 2023); do not add it as a new dependency.
-- The current Worker uses direct HTTPS requests to the official Graph API instead. This avoids relying on the archived SDK but still requires a legitimate Meta business sender and approved template.
-- Do not use unofficial WhatsApp Web libraries or session scraping as a substitute.
+### Stalwart SMTP
+- Upstream: https://github.com/stalwartlabs/smtp-server
+- License: AGPL-3.0-or-later, with a separate commercial licensing offer noted upstream.
+- Role: self-hosted SMTP server.
+- Caveat: running an MTA does not guarantee deliverability. A sending domain, SPF, DKIM, DMARC, reverse DNS, a stable IP, reputation management and abuse handling are still needed.
+- Decision: do not operate our own mail server until we have infrastructure and mail-operations capacity.
 
-## Non-negotiable trust rules
+### Coolify
+- Upstream: https://github.com/coollabsio/coolify
+- License: Apache-2.0.
+- Role: self-hosted deployment control plane.
+- Caveat: it manages infrastructure that we own; it does not provide free compute. Its upstream guide lists 2 CPU cores, 2 GB RAM and 10 GB disk as minimum control-plane requirements.
+- Decision: optional future operator tool, not a dependency of the app.
 
-1. No credentials, tokens, database passwords, or private keys in this public repository or frontend bundle.
-2. No payment status changes from a success URL, uploaded screenshot alone, or unverified webhook.
-3. No WhatsApp automation through unofficial web clients.
-4. No claims of legal ownership certification from a Git commit or SHA-256 alone.
-5. Show timestamp state honestly: locally hashed, submitted/pending, or Bitcoin-confirmed.
-6. Keep the initial release narrow. Do not introduce Appwrite, Kill Bill, Hyperswitch, and Coolify simultaneously.
+### Bun
+- Upstream: https://github.com/oven-sh/bun
+- License: Bun is MIT; its license notice also documents bundled third-party components and their licenses.
+- Role: possible JS runtime and package manager.
+- Decision: do not change runtime from Node for the MVP. Prefer the mature Node compatibility path; revisit only if measured resource or performance benefits justify it.
 
-## Current implementation status
+### OpenTimestamps
+- Upstream client: https://github.com/opentimestamps/opentimestamps-client
+- License: LGPL-3.0-or-later.
+- Role: open timestamp proof client and format.
+- Caveat: public calendar availability and eventual Bitcoin anchoring are external dependencies. Confirmation is asynchronous and may require proof upgrade.
+- Decision: keep as an optional evidence feature, not a claim of legal ownership certification.
 
-- Frontend redesign and Hono/Cloudflare Worker/D1 backend foundation are committed.
-- The GitHub Pages workflow for commit `d9329db2b0053184e0056116a2d05ab5d07c728a` completed successfully.
-- The Worker is not deployed and no D1 database is provisioned yet.
-- Email, WhatsApp and Stripe credentials are not present in the repository (correctly).
-- Stripe webhook verification is deliberately fail-closed; paid entitlements are not activated until a signed, idempotent webhook handler exists.
-- GitHub customer-repository provisioning is still planned. A maintainer-operated OpenTimestamps digest-proof workflow is now committed; it is not yet a customer-facing integration.
+## External-service policy
 
-## References
-- https://github.com/opentimestamps/opentimestamps-client
-- https://github.com/opentimestamps/javascript-opentimestamps
-- https://github.com/opentimestamps/opentimestamps-server
-- https://github.com/appwrite/appwrite
-- https://appwrite.io/docs/products/auth/email-otp
-- https://github.com/coollabsio/coolify
-- https://github.com/juspay/hyperswitch
-- https://github.com/killbill/killbill
-- https://github.com/knadh/listmonk
-- https://github.com/WhatsApp/WhatsApp-Nodejs-SDK
+| Capability | Open-source-only position | Honest limitation |
+|---|---|---|
+| Email OTP | SMTP adapter; optional self-hosted MTA | Deliverability requires domain/network operations; software cannot make outbound email free or trusted |
+| WhatsApp OTP | No OSS-only official route | Official WhatsApp delivery depends on Meta's platform/business onboarding; unofficial web automation is rejected |
+| SMS OTP | No OSS-only carrier route | Requires a telecom/SMS provider or direct carrier arrangement |
+| Payment collection | Manual transfer + admin reconciliation | Not instant automated collection; admin must reconcile actual incoming funds |
+| Always-on hosting | Owner-controlled server | Hardware, electricity, bandwidth or VPS cost still exists |
+| Trusted timestamp | OpenTimestamps client and public calendar or self-hosted calendar | Bitcoin/network fees and confirmation latency remain |
+
+## Security and release gates
+
+- All OTP request counters must be atomic under concurrent requests.
+- Wrong OTP attempts must be bounded and the successful OTP must be consumed atomically once.
+- Sessions must be opaque, stored as hashes, revocable, and never exposed to browser JavaScript.
+- Public worker/API responses must not expose private tokens, original files, or internal secrets.
+- Payment activation requires an auditable admin decision or a verified, idempotent gateway event.
+- Migrations must be applied to a disposable local database in CI before merge.
+- Build, typecheck, dependency audit, CodeQL, migration validation and API security tests must pass.
+- Never merge a branch with cancelled, missing, or failing required checks.
+- Never describe a feature as deployed until its runtime, database, secrets and smoke tests are confirmed.
+
+## Next implementation sequence
+
+1. Finish and verify PR #10's atomic OTP and migration changes.
+2. Add a dependency inventory and a Node/SQLite compatibility spike on a separate branch; do not replace the live static frontend.
+3. Port only the existing Hono routes to Node and add migration/auth integration tests.
+4. Replace Resend/Meta/Stripe as mandatory dependencies with SMTP-optional verification and manual audited subscription reconciliation.
+5. Add Docker/systemd deployment files and a backup/restore runbook.
+6. Deploy only after an actual server is available; until then, retain static preview and state the backend is not live.
