@@ -42,7 +42,7 @@
 
 1. Authenticated user selects a plan and InstaPay.
 2. Server computes the EGP amount and creates a pending order.
-3. Server returns the recipient value only to that authenticated checkout response. The UI does not print it; it provides a copy action.
+3. Server returns the signed payment link only to that authenticated checkout response. The UI does not print it; it provides a copy action.
 4. Customer transfers the exact amount and submits the transfer reference.
 5. Order becomes submitted, not paid.
 6. An authorized operator verifies the credit and calls the internal review endpoint with the admin review secret.
@@ -54,7 +54,7 @@
 - BINANCE_PAY_SECRET_KEY
 - BINANCE_PAY_PUBLIC_KEY
 - BINANCE_PAY_WEBHOOK_CERT_SN
-- INSTAPAY_RECIPIENT
+- INSTAPAY_PAYMENT_LINK
 - ADMIN_REVIEW_SECRET
 
 All are server-only secrets. Never prefix them with VITE_, commit them, place them in a public Actions variable, or return them from a public configuration endpoint.
@@ -63,7 +63,7 @@ All are server-only secrets. Never prefix them with VITE_, commit them, place th
 
 - Obtain and test a Binance Pay Merchant account, API key/secret, webhook public key and certificate serial.
 - Set the webhook URL in the Binance merchant dashboard and test a signed sandbox/test payment before production.
-- Confirm the correct InstaPay recipient IPA/mobile value and test a small transfer.
+- Configure the exact HTTPS payment link encoded in the supplied InstaPay QR as INSTAPAY_PAYMENT_LINK on the backend only; verify it opens the expected recipient and test a small transfer. Accept only https://ipn.eg/C/Q/... links.
 - Configure the internal operator tool with ADMIN_REVIEW_SECRET; keep it out of the public website.
 - Apply migration 0004 before deploying the updated API.
 - The API must be deployed on a real runtime with secrets. A successful static GitHub Pages deployment does not activate payments.
