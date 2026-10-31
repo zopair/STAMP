@@ -58,7 +58,7 @@ GitHub Actions builds and deploys it on pushes to `main`.
 
 ## Backend deployment requirements
 
-GitHub Pages cannot execute the Worker or securely store server credentials. To activate the API:
+GitHub Pages cannot execute the Worker or securely store server credentials. The current API adapter still targets Cloudflare Worker/D1 and is not deployed. This is a legacy runtime path; it must be migrated to the approved self-hosted open-source runtime before production, rather than treating a managed Cloudflare account as a permanent required dependency. To test the existing adapter only:
 
 1. Create a Cloudflare D1 database named `stamp-production`.
 2. Replace the placeholder `database_id` in `wrangler.jsonc` with the real D1 database ID.
@@ -82,7 +82,7 @@ GitHub Pages cannot execute the Worker or securely store server credentials. To 
    npx wrangler secret put INSTAPAY_RECIPIENT
    npx wrangler secret put ADMIN_REVIEW_SECRET
    ```
-   Configure and approve the WhatsApp template named `stamp_otp` with a single body parameter. Meta WhatsApp Business Cloud credentials and an approved sender are required.
+   Legacy note: the current account OTP implementation still depends on Resend and the official Meta WhatsApp Cloud API. These are not open-source self-hosted services; migrate this authentication delivery path before claiming the full platform is independent of commercial providers. Configure and approve the WhatsApp template named `stamp_otp` only if testing this legacy adapter.
 6. Deploy the Worker:
    ```bash
    npm run api:deploy
@@ -91,7 +91,7 @@ GitHub Pages cannot execute the Worker or securely store server credentials. To 
 
 **Important browser-session constraint:** the current GitHub Pages origin (`github.io`) and a default Worker origin (`workers.dev`) are cross-site. Although the cookie is configured with `SameSite=None; Secure`, browsers that block third-party cookies may not persist or send the session cookie. Do not launch paid account access on this split-origin setup. Before production, use a custom domain with the frontend and API under the same site (for example, `app.example.com` and `api.example.com`) or move the frontend and API behind a same-origin Cloudflare deployment. Verify login, refresh, and logout on real mobile browsers.
 
-The monthly/yearly Stripe Price IDs must be recurring prices; the lifetime Price ID must be a one-time price. Configure the Binance Pay webhook at /api/billing/binance/webhook. Do not use a browser redirect as proof of payment. InstaPay remains manual-review until the incoming transfer is verified against the bank statement.
+Configure the Binance Pay webhook at /api/billing/binance/webhook. Do not use a browser redirect as proof of payment. InstaPay remains manual-review until the incoming transfer is verified against the bank statement.
 
 ## Plan definitions
 
@@ -106,7 +106,7 @@ SEO automation, video generation and social-platform publishing are product requ
 - A SHA-256 digest helps establish file integrity against a known digest; it does not independently prove authorship, legal ownership or creation time.
 - The current browser receipt uses device time, not a trusted timestamp authority.
 - Do not upload private source files or credentials to a public repository.
-- No GitHub token, Resend key, Meta token, Stripe secret or session secret belongs in frontend code.
+- No GitHub token, Resend key, Meta token, Binance secret, InstaPay recipient identifier, admin review secret or session secret belongs in frontend code.
 - Do not advertise the platform as providing legal certification until independent timestamping, immutable evidence records and the applicable legal process have been reviewed.
 
 ## OpenTimestamps proof (GitHub Actions)
