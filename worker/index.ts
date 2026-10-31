@@ -51,10 +51,10 @@ async function verifyBinanceWebhook(body: string, timestamp: string, nonce: stri
   const sig=Uint8Array.from(atob(signature),ch=>ch.charCodeAt(0))
   return crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,sig,encoder.encode(`${timestamp}\n${nonce}\n${body}\n`))
 }
-async function activateSubscription(db: D1Database, userId: string, plan: string, now: number) {
+async function activateSubscription(db: D1Database, userId: string, plan: string, now: number, paymentOrderId: string) {
   const end=plan==='monthly'?now+30*86400:plan==='yearly'?now+365*86400:null
-  await db.prepare('INSERT INTO subscriptions(id,user_id,plan,status,current_period_end,created_at) VALUES(?,?,?,\'active\',?,?)')
-    .bind(crypto.randomUUID(),userId,plan,end,now).run()
+  await db.prepare("INSERT INTO subscriptions(id,user_id,plan,status,current_period_end,created_at,payment_order_id) VALUES(?,?,?,'active',?,?,?) ON CONFLICT(payment_order_id) DO NOTHING")
+    .bind(crypto.randomUUID(),userId,plan,end,now,paymentOrderId).run()
 }
 function randomCode() { return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6,'0') }
 function cookie(name: string, value: string, maxAge: number) { return `${name}=${value}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${maxAge}` }
@@ -168,12 +168,14 @@ app.post('/api/admin/payments/instapay/review',async c=>{
   const body=await c.req.json<{orderId?:string;approve?:boolean}>()
   if(!body.orderId||typeof body.approve!=='boolean')return json('Invalid review request')
   const row=await c.env.DB.prepare("SELECT user_id,plan,status FROM payment_orders WHERE id=? AND method='instapay'").bind(body.orderId).first<{user_id:string;plan:string;status:string}>()
-  if(!row||row.status!=='submitted')return json('Order is not awaiting review',409)
+  if(!row)return json('Order not found',404)
   const now=Math.floor(Date.now()/1000)
+  if(row.status==='paid'&&body.approve){await activateSubscription(c.env.DB,row.user_id,row.plan,now,body.orderId);return c.json({ok:true,status:'paid'})}
+  if(row.status!=='submitted')return json('Order is not awaiting review',409)
   const result=await c.env.DB.prepare("UPDATE payment_orders SET status=?,paid_at=?,updated_at=? WHERE id=? AND status='submitted'")
     .bind(body.approve?'paid':'rejected',body.approve?now:null,now,body.orderId).run()
   if((result.meta?.changes||0)!==1)return json('Order review conflict',409)
-  if(body.approve)await activateSubscription(c.env.DB,row.user_id,row.plan,now)
+  if(body.approve)await activateSubscription(c.env.DB,row.user_id,row.plan,now,body.orderId)
   return c.json({ok:true,status:body.approve?'paid':'rejected'})
 })
 app.post('/api/billing/binance/webhook',async c=>{
@@ -189,16 +191,18 @@ app.post('/api/billing/binance/webhook',async c=>{
   let data:{merchantTradeNo?:string;totalFee?:number|string;currency?:string;transactionId?:string}
   try{data=JSON.parse(event.data)}catch{return json('Invalid payment event data')}
   if(!data.merchantTradeNo||!data.transactionId||data.currency!=='USDT')return json('Payment event is incomplete')
-  const row=await c.env.DB.prepare('SELECT id,user_id,plan,amount_minor FROM payment_orders WHERE merchant_trade_no=? AND method=\'binance\' AND status=\'pending\'')
-    .bind(data.merchantTradeNo).first<{id:string;user_id:string;plan:string;amount_minor:number}>()
-  if(!row||Math.round(Number(data.totalFee)*100)!==row.amount_minor)return json('Payment does not match the pending order',409)
+  const row=await c.env.DB.prepare('SELECT id,user_id,plan,amount_minor,status,provider_transaction_id FROM payment_orders WHERE merchant_trade_no=? AND method=\'binance\'')
+    .bind(data.merchantTradeNo).first<{id:string;user_id:string;plan:string;amount_minor:number;status:string;provider_transaction_id:string|null}>()
+  if(!row||Math.round(Number(data.totalFee)*100)!==row.amount_minor)return json('Payment does not match the order',409)
   const now=Math.floor(Date.now()/1000)
+  if(row.status==='paid'&&row.provider_transaction_id===data.transactionId){await activateSubscription(c.env.DB,row.user_id,row.plan,now,row.id);return c.json({returnCode:'SUCCESS',returnMessage:null})}
+  if(row.status!=='pending')return json('Payment order is not pending',409)
   const updated=await c.env.DB.prepare("UPDATE payment_orders SET status='paid',provider_transaction_id=?,paid_at=?,updated_at=? WHERE id=? AND status='pending'")
     .bind(data.transactionId,now,now,row.id).run()
   if((updated.meta?.changes||0)!==1)return c.json({returnCode:'SUCCESS',returnMessage:null})
-  await c.env.DB.prepare('INSERT INTO payments(id,user_id,provider_event_id,amount,currency,status,created_at) VALUES(?,?,?,?,?,?,?)')
+  await c.env.DB.prepare('INSERT OR IGNORE INTO payments(id,user_id,provider_event_id,amount,currency,status,created_at) VALUES(?,?,?,?,?,?,?)')
     .bind(crypto.randomUUID(),row.user_id,data.transactionId,row.amount_minor,'USDT','paid',now).run()
-  await activateSubscription(c.env.DB,row.user_id,row.plan,now)
+  await activateSubscription(c.env.DB,row.user_id,row.plan,now,row.id)
   return c.json({returnCode:'SUCCESS',returnMessage:null})
 })
 app.post('/api/auth/logout',async c=>{
