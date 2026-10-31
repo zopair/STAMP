@@ -53,6 +53,19 @@ Coolify's upstream self-hosted guide lists a minimum of 2 CPU cores, 2 GB RAM an
 - Role: keep the existing framework; use the Node adapter for portability.
 - Decision: selected, subject to a Node runtime integration test.
 
+### Hono Node server adapter
+- Upstream: https://github.com/honojs/node-server
+- Package: @hono/node-server; license: MIT; upstream package currently declares Node.js >=20.
+- Role: standard Node HTTP server adapter for the existing Hono app.
+- Decision: selected for the Node migration spike; keep Hono application routes independent from the hosting runtime.
+
+### better-sqlite3
+- Upstream: https://github.com/WiseLibs/better-sqlite3
+- Package license: MIT; current upstream package metadata requires Node.js >=22 and includes the native node-addon-api dependency.
+- Role: synchronous SQLite binding with transaction support and prepared statements.
+- Caveat: native addon/prebuilt binary compatibility must be tested on the target OS/architecture. SQLite serializes writes; do not use a single SQLite file across multiple application hosts or high-write multi-process workloads.
+- Decision: preferred SQLite driver for the first single-instance Node deployment, pending a clean CI build, migration test, backup/restore test, and concurrency test.
+
 ### Better Auth
 - Upstream: https://github.com/better-auth/better-auth
 - License: MIT (LICENSE.md).
