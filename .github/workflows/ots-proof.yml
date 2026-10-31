@@ -1,0 +1,73 @@
+name: Create OpenTimestamps proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha256:
+        description: "64-character SHA-256 digest of the original file"
+        required: true
+        type: string
+      label:
+        description: "Optional human-readable label (not used as proof input)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ots-proof-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  stamp:
+    name: Anchor file digest with OpenTimestamps
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validate digest and create evidence manifest
+        env:
+          SHA256: ${{ inputs.sha256 }}
+          LABEL: ${{ inputs.label }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SHA256" =~ ^[A-Fa-f0-9]{64}$ ]]; then
+            echo "Input must be exactly 64 hexadecimal characters." >&2
+            exit 1
+          fi
+          printf 'STAMP-SHA256:%s\n' "${SHA256,,}" > evidence.txt
+          {
+            echo "## STAMP OpenTimestamps request"
+            echo
+            echo "- Digest: `${SHA256,,}`"
+            echo "- Label: ${LABEL:-Not supplied}"
+            echo "- GitHub run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- The original file was not uploaded."
+            echo "- The proof may initially be pending Bitcoin confirmation."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned OpenTimestamps client
+        run: python -m pip install --disable-pip-version-check opentimestamps-client==0.8.0
+
+      - name: Request timestamp from public calendars
+        run: ots stamp evidence.txt
+
+      - name: Inspect generated proof
+        run: |
+          test -s evidence.txt.ots
+          ots info evidence.txt.ots
+
+      - name: Upload evidence manifest and proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: stamp-ots-proof-${{ github.run_id }}
+          path: |
+            evidence.txt
+            evidence.txt.ots
+          if-no-files-found: error
+          retention-days: 90
