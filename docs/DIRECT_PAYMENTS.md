@@ -6,7 +6,7 @@
 - Binance Pay uses the official merchant checkout API. The merchant UID is never shipped to the browser. The backend creates an order and returns only the official checkout URL.
 - InstaPay is implemented as a manual transfer workflow. The backend holds the recipient IPA/mobile identifier as a secret and sends it only to an authenticated payer after order creation; the frontend exposes a copy action but never renders the value.
 - The USD plan catalog is authoritative on the server: monthly 5, yearly 50, lifetime 100. InstaPay EGP is computed server-side at 55 EGP/USD: 275, 2,750, and 5,500 EGP.
-- No plan is activated by a browser redirect, screenshot, or customer-entered reference alone.
+- No plan is activated by a browser redirect, screenshot, or customer-entered reference alone. Each submitted InstaPay reference is checked for duplicate use; an operator confirms the incoming credit before approval.
 
 ## Upstream research
 
@@ -24,7 +24,7 @@
 - Official FAQ: https://instapay.eg/?lang=en&page_id=348
 - Central Bank of Egypt IPN information: https://www.cbe.org.eg/en/payment-systems-and-services/instant-payment-network
 - Public documentation describes customer transfers by IPA/mobile number and collect requests, but no public merchant API for third-party websites was found in the official materials checked.
-- Therefore the integration intentionally does not pretend to query InstaPay transaction status automatically. The payer submits a transfer reference; an operator verifies the incoming credit in the bank/InstaPay records and approves or rejects the order through a server-only endpoint.
+- Therefore the integration intentionally does not pretend to query InstaPay transaction status automatically. The payer submits a transfer reference; the backend links it to the order and prevents reuse. An operator reviews the pending queue, verifies the incoming credit in bank/InstaPay records, then approves or rejects.
 - GitHub search did not identify a maintained, trustworthy official InstaPay SDK or merchant API implementation suitable for this use. No unofficial WhatsApp, screen-scraping, or reverse-engineered integration is used.
 
 ## Payment lifecycle
@@ -54,7 +54,7 @@
 - BINANCE_PAY_SECRET_KEY
 - BINANCE_PAY_PUBLIC_KEY
 - BINANCE_PAY_WEBHOOK_CERT_SN
-- INSTAPAY_PAYMENT_LINK
+- InstaPay QR payment URL
 - ADMIN_REVIEW_SECRET
 
 All are server-only secrets. Never prefix them with VITE_, commit them, place them in a public Actions variable, or return them from a public configuration endpoint.
@@ -64,6 +64,6 @@ All are server-only secrets. Never prefix them with VITE_, commit them, place th
 - Obtain and test a Binance Pay Merchant account, API key/secret, webhook public key and certificate serial.
 - Set the webhook URL in the Binance merchant dashboard and test a signed sandbox/test payment before production.
 - Configure the exact HTTPS payment link encoded in the supplied InstaPay QR as INSTAPAY_PAYMENT_LINK on the backend only; verify it opens the expected recipient and test a small transfer. Accept only https://ipn.eg/C/Q/... links.
-- Configure the internal operator tool with ADMIN_REVIEW_SECRET; keep it out of the public website.
+- Use the protected pending-orders endpoint and review endpoint with ADMIN_REVIEW_SECRET; keep it out of the public website.
 - Apply migration 0004 before deploying the updated API.
 - The API must be deployed on a real runtime with secrets. A successful static GitHub Pages deployment does not activate payments.
