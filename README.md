@@ -14,7 +14,7 @@ STAMP is being developed as a product for creating and managing verifiable digit
 - Cloudflare Worker + Hono API in `worker/index.ts`.
 - Cloudflare D1 initial schema in `worker/migrations/0001_initial.sql`.
 - Email OTP through Resend and WhatsApp OTP through the official Meta WhatsApp Cloud API.
-- Hashed OTP storage, expiry, basic per-email throttling, hashed opaque sessions, and D1-backed account lookup.
+- Hashed OTP storage, 10-minute expiry, per-email/phone/IP request throttling, a five-attempt verification ceiling, atomic one-time code consumption, hashed opaque sessions, and D1-backed account lookup.
 - Stripe Checkout session creation for monthly, yearly and lifetime price IDs.
 - Payment entitlements are **not activated**: the Stripe webhook currently fails closed until signature verification and event reconciliation are implemented.
 - GitHub repository provisioning, server-side evidence commits, independent trusted timestamping, and SEO/video generation are not yet implemented.
@@ -57,6 +57,8 @@ GitHub Pages cannot execute the Worker or securely store server credentials. To 
    npm run api:deploy
    ```
 7. Build the frontend with `VITE_API_BASE_URL` set to the Worker origin and publish the new Pages build.
+
+**Important browser-session constraint:** the current GitHub Pages origin (`github.io`) and a default Worker origin (`workers.dev`) are cross-site. Although the cookie is configured with `SameSite=None; Secure`, browsers that block third-party cookies may not persist or send the session cookie. Do not launch paid account access on this split-origin setup. Before production, use a custom domain with the frontend and API under the same site (for example, `app.example.com` and `api.example.com`) or move the frontend and API behind a same-origin Cloudflare deployment. Verify login, refresh, and logout on real mobile browsers.
 
 The monthly/yearly Stripe Price IDs must be recurring prices; the lifetime Price ID must be a one-time price. Configure the Stripe webhook endpoint only after its signature verification and idempotent event handler are implemented. Do not use a browser redirect as proof of payment.
 
