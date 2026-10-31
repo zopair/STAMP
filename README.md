@@ -10,11 +10,11 @@ STAMP is being developed as a product for creating and managing verifiable digit
 - The browser fingerprint tool does not upload file contents.
 - Account UI calls a real API and deliberately refuses fake OTP or fake payment confirmation when the API is not configured.
 
-### Backend foundation added
+### Legacy backend scaffold (not deployed; migration pending)
 - Cloudflare Worker + Hono API in `worker/index.ts`.
 - Cloudflare D1 initial schema in `worker/migrations/0001_initial.sql`.
 - Email OTP through Resend and WhatsApp OTP through the official Meta WhatsApp Cloud API.
-- Hashed OTP storage, 10-minute expiry, per-email/phone/IP request throttling, a five-attempt verification ceiling, atomic one-time code consumption, hashed opaque sessions, and D1-backed account lookup.
+- The current branch includes the initial custom OTP/session implementation; PR #10 is hardening request limits, attempt ceilings, and atomic one-time consumption. Its migration is not deployed.
 - Stripe Checkout session creation for monthly, yearly and lifetime price IDs.
 - Payment entitlements are **not activated**: the Stripe webhook currently fails closed until signature verification and event reconciliation are implemented.
 - GitHub repository provisioning, server-side evidence commits, independent trusted timestamping, and SEO/video generation are not yet implemented.
@@ -26,41 +26,27 @@ GitHub Pages hosts only the static Vite frontend:
 
 GitHub Actions builds and deploys it on pushes to `main`.
 
-## Backend deployment requirements
+## Current release boundary
 
-GitHub Pages cannot execute the Worker or securely store server credentials. To activate the API:
+The Worker is not deployed, no production D1 database is provisioned, and no provider credentials are configured. Therefore the published site is a static frontend preview; account registration, OTP delivery, billing, and customer provisioning are not live services.
 
-1. Create a Cloudflare D1 database named `stamp-production`.
-2. Replace the placeholder `database_id` in `wrangler.jsonc` with the real D1 database ID.
-3. Set `SITE_ORIGIN` to the exact deployed Pages origin.
-4. Apply the migration:
-   ```bash
-   npm install
-   npm run db:remote
-   ```
-5. Add Worker secrets using Wrangler (never commit secrets):
-   ```bash
-   npx wrangler secret put SESSION_SECRET
-   npx wrangler secret put RESEND_API_KEY
-   npx wrangler secret put EMAIL_FROM
-   npx wrangler secret put META_ACCESS_TOKEN
-   npx wrangler secret put META_PHONE_NUMBER_ID
-   npx wrangler secret put STRIPE_SECRET_KEY
-   npx wrangler secret put STRIPE_WEBHOOK_SECRET
-   npx wrangler secret put STRIPE_PRICE_MONTHLY
-   npx wrangler secret put STRIPE_PRICE_YEARLY
-   npx wrangler secret put STRIPE_PRICE_LIFETIME
-   ```
-   Configure and approve the WhatsApp template named `stamp_otp` with a single body parameter. Meta WhatsApp Business Cloud credentials and an approved sender are required.
-6. Deploy the Worker:
-   ```bash
-   npm run api:deploy
-   ```
-7. Build the frontend with `VITE_API_BASE_URL` set to the Worker origin and publish the new Pages build.
+The current Worker code still contains legacy adapters for Cloudflare D1, Resend, Meta WhatsApp Cloud API and Stripe. These are not approved as mandatory dependencies under the project's operating policy. Do not deploy this legacy adapter as a production service or configure paid provider accounts as the next step.
 
-**Important browser-session constraint:** the current GitHub Pages origin (`github.io`) and a default Worker origin (`workers.dev`) are cross-site. Although the cookie is configured with `SameSite=None; Secure`, browsers that block third-party cookies may not persist or send the session cookie. Do not launch paid account access on this split-origin setup. Before production, use a custom domain with the frontend and API under the same site (for example, `app.example.com` and `api.example.com`) or move the frontend and API behind a same-origin Cloudflare deployment. Verify login, refresh, and logout on real mobile browsers.
+## Target self-hosted architecture
 
-The monthly/yearly Stripe Price IDs must be recurring prices; the lifetime Price ID must be a one-time price. Configure the Stripe webhook endpoint only after its signature verification and idempotent event handler are implemented. Do not use a browser redirect as proof of payment.
+The implementation plan is documented in [Open-source operating policy and target architecture](docs/OPEN_SOURCE_ALTERNATIVES.md).
+
+The target is deliberately small:
+- Keep the existing React/Vite frontend.
+- Keep Hono and port its API to standard Node.js LTS.
+- Use a local SQLite database for the initial single-instance deployment.
+- Keep sessions server-side, hashed, revocable and protected by atomic OTP/rate-limit logic.
+- Make SMTP an optional adapter; do not require Resend or WhatsApp.
+- Start subscriptions as pending and activate only after an auditable admin reconciliation of an actual bank/wallet transfer.
+- Keep OpenTimestamps as an optional proof format; it is not legal ownership certification.
+- Deploy the API only when an owner-controlled server or VPS is available.
+
+GitHub Pages and GitHub Actions are not a persistent API host or production database. No always-on backend is claimed until the server, database, secrets, backups and smoke tests exist.
 
 ## Plan definitions
 
