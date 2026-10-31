@@ -19,3 +19,5 @@ CREATE TABLE IF NOT EXISTS payment_orders (
 );
 CREATE INDEX IF NOT EXISTS payment_orders_user_created ON payment_orders(user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS payment_orders_status_method ON payment_orders(status,method);
+ALTER TABLE subscriptions ADD COLUMN payment_order_id TEXT REFERENCES payment_orders(id);
+CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_payment_order_unique ON subscriptions(payment_order_id);
