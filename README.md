@@ -14,7 +14,7 @@ STAMP is being developed as a product for creating and managing verifiable digit
 - Cloudflare Worker + Hono API in `worker/index.ts`.
 - Cloudflare D1 initial schema in `worker/migrations/0001_initial.sql`.
 - Email OTP through Resend and WhatsApp OTP through the official Meta WhatsApp Cloud API.
-- Hashed OTP storage, expiry, basic per-email throttling, hashed opaque sessions, and D1-backed account lookup.
+- Hashed OTP storage, 10-minute expiry, per-email/phone/IP request throttling, a five-attempt verification ceiling, atomic one-time code consumption, hashed opaque sessions, and D1-backed account lookup.
 - Stripe Checkout session creation for monthly, yearly and lifetime price IDs.
 - Payment entitlements are **not activated**: the Stripe webhook currently fails closed until signature verification and event reconciliation are implemented.
 - GitHub repository provisioning, server-side evidence commits, independent trusted timestamping, and SEO/video generation are not yet implemented.
