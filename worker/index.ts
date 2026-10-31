@@ -13,6 +13,7 @@ type Env = {
   BINANCE_PAY_API_KEY: string
   BINANCE_PAY_SECRET_KEY: string
   BINANCE_PAY_PUBLIC_KEY: string
+  BINANCE_PAY_WEBHOOK_CERT_SN: string
   INSTAPAY_RECIPIENT: string
   ADMIN_REVIEW_SECRET: string
   GITHUB_CLIENT_ID: string
@@ -180,8 +181,8 @@ app.post('/api/admin/payments/instapay/review',async c=>{
 })
 app.post('/api/billing/binance/webhook',async c=>{
   if(!c.env.BINANCE_PAY_PUBLIC_KEY)return json('Webhook verification is not configured',503)
-  const body=await c.req.text(),timestamp=c.req.header('BinancePay-Timestamp')||'',nonce=c.req.header('BinancePay-Nonce')||'',signature=c.req.header('BinancePay-Signature')||''
-  if(!timestamp||!nonce||!signature||Math.abs(Date.now()-Number(timestamp))>5*60*1000)return json('Invalid webhook headers',401)
+  const body=await c.req.text(),timestamp=c.req.header('BinancePay-Timestamp')||'',nonce=c.req.header('BinancePay-Nonce')||'',signature=c.req.header('BinancePay-Signature')||'',certificateSn=c.req.header('BinancePay-Certificate-SN')||''
+  if(!timestamp||!nonce||!signature||!certificateSn||!c.env.BINANCE_PAY_WEBHOOK_CERT_SN||!constantTimeEqual(certificateSn,c.env.BINANCE_PAY_WEBHOOK_CERT_SN)||Math.abs(Date.now()-Number(timestamp))>5*60*1000)return json('Invalid webhook headers',401)
   let valid=false
   try{valid=await verifyBinanceWebhook(body,timestamp,nonce,signature,c.env.BINANCE_PAY_PUBLIC_KEY)}catch{valid=false}
   if(!valid)return json('Invalid webhook signature',401)
