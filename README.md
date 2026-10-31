@@ -35,6 +35,7 @@ Configure these as Worker secrets (not repository variables and never VITE_*):
 - BINANCE_PAY_API_KEY
 - BINANCE_PAY_SECRET_KEY
 - BINANCE_PAY_PUBLIC_KEY (the Binance Pay webhook verification public key/certificate)
+- BINANCE_PAY_WEBHOOK_CERT_SN (the matching Binance Pay webhook certificate serial)
 - INSTAPAY_RECIPIENT (the recipient IPA or registered mobile number)
 - ADMIN_REVIEW_SECRET (a long random secret used only by the internal InstaPay review endpoint)
 
@@ -74,11 +75,12 @@ GitHub Pages cannot execute the Worker or securely store server credentials. To 
    npx wrangler secret put EMAIL_FROM
    npx wrangler secret put META_ACCESS_TOKEN
    npx wrangler secret put META_PHONE_NUMBER_ID
-   npx wrangler secret put STRIPE_SECRET_KEY
-   npx wrangler secret put STRIPE_WEBHOOK_SECRET
-   npx wrangler secret put STRIPE_PRICE_MONTHLY
-   npx wrangler secret put STRIPE_PRICE_YEARLY
-   npx wrangler secret put STRIPE_PRICE_LIFETIME
+   npx wrangler secret put BINANCE_PAY_API_KEY
+   npx wrangler secret put BINANCE_PAY_SECRET_KEY
+   npx wrangler secret put BINANCE_PAY_PUBLIC_KEY
+   npx wrangler secret put BINANCE_PAY_WEBHOOK_CERT_SN
+   npx wrangler secret put INSTAPAY_RECIPIENT
+   npx wrangler secret put ADMIN_REVIEW_SECRET
    ```
    Configure and approve the WhatsApp template named `stamp_otp` with a single body parameter. Meta WhatsApp Business Cloud credentials and an approved sender are required.
 6. Deploy the Worker:
@@ -89,7 +91,7 @@ GitHub Pages cannot execute the Worker or securely store server credentials. To 
 
 **Important browser-session constraint:** the current GitHub Pages origin (`github.io`) and a default Worker origin (`workers.dev`) are cross-site. Although the cookie is configured with `SameSite=None; Secure`, browsers that block third-party cookies may not persist or send the session cookie. Do not launch paid account access on this split-origin setup. Before production, use a custom domain with the frontend and API under the same site (for example, `app.example.com` and `api.example.com`) or move the frontend and API behind a same-origin Cloudflare deployment. Verify login, refresh, and logout on real mobile browsers.
 
-The monthly/yearly Stripe Price IDs must be recurring prices; the lifetime Price ID must be a one-time price. Configure the Stripe webhook endpoint only after its signature verification and idempotent event handler are implemented. Do not use a browser redirect as proof of payment.
+The monthly/yearly Stripe Price IDs must be recurring prices; the lifetime Price ID must be a one-time price. Configure the Binance Pay webhook at /api/billing/binance/webhook. Do not use a browser redirect as proof of payment. InstaPay remains manual-review until the incoming transfer is verified against the bank statement.
 
 ## Plan definitions
 
