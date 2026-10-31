@@ -14,7 +14,6 @@ type Env = {
   BINANCE_PAY_SECRET_KEY: string
   BINANCE_PAY_PUBLIC_KEY: string
   BINANCE_PAY_WEBHOOK_CERT_SN: string
-  INSTAPAY_PAYMENT_LINK: string
   ADMIN_REVIEW_SECRET: string
   GITHUB_CLIENT_ID: string
   GITHUB_CLIENT_SECRET: string
@@ -23,6 +22,8 @@ type Vars = { userId: string }
 const app = new Hono<{ Bindings: Env; Variables: Vars }>()
 const json = (error: string, status = 400) => new Response(JSON.stringify({ error }), { status, headers: { 'Content-Type': 'application/json' } })
 const encoder = new TextEncoder()
+// Public, shareable payment URL encoded in the owner's supplied InstaPay QR.
+const INSTAPAY_PAYMENT_LINK = 'https://ipn.eg/C/Q/alyzopairalymisr/instapay?ISIGN=23052603MEYCIQCa+165kldG7+2KEw41HONJ5GFzrxnECQxHmS5C9oShqAIhAPSbhFHWlQ7OJd1mpVrXAf/px8K9C2gZbw5mhYW9t2FS'
 async function hash(value: string) { const b = await crypto.subtle.digest('SHA-256', encoder.encode(value)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('') }
 async function allowOtpRequest(db: D1Database, scope: 'email'|'phone'|'ip', subject: string, limit: number, now: number, secret: string) {
   const subjectHash = await hash(subject + secret)
@@ -152,9 +153,7 @@ app.post('/api/billing/intent', async c => {
       .bind(result.data.prepayId,checkoutUrl,Math.floor(Date.now()/1000),id).run()
     return c.json({orderId:id,method,amount:usd,currency:'USDT',checkoutUrl})
   }
-  if (!c.env.INSTAPAY_PAYMENT_LINK) return json('رابط InstaPay الآمن غير مهيأ على الخادم. لم يتم إنشاء طلب.',503)
-  let instaPayUrl: URL
-  try { instaPayUrl = new URL(c.env.INSTAPAY_PAYMENT_LINK); if (instaPayUrl.protocol !== 'https:' || instaPayUrl.hostname !== 'ipn.eg' || !instaPayUrl.pathname.startsWith('/C/Q/')) throw new Error('Invalid InstaPay payment link') } catch { return json('إعداد رابط InstaPay على الخادم غير صالح.',503) }
+  const instaPayUrl = new URL(INSTAPAY_PAYMENT_LINK)
   await c.env.DB.prepare('INSERT INTO payment_orders(id,user_id,merchant_trade_no,plan,method,amount_minor,currency,usd_amount_cents,exchange_rate,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
     .bind(id,c.get('userId'),merchantTradeNo,plan,'instapay',egp*100,'EGP',usd*100,55,'pending',now,now).run()
   return c.json({orderId:id,method:'instapay',amount:egp,currency:'EGP',exchangeRate:55,paymentLink:instaPayUrl.toString(),status:'pending'})
@@ -169,10 +168,17 @@ app.post('/api/billing/instapay/submit',async c=>{
   const body=await c.req.json<{orderId?:string;transferReference?:string}>()
   const ref=(body.transferReference||'').trim()
   if(!body.orderId||ref.length<6||ref.length>100||!/^[A-Za-z0-9._/-]+$/.test(ref))return json('أدخل مرجع تحويل صحيحاً (6 إلى 100 حرف/رقم).')
+  const duplicate=await c.env.DB.prepare("SELECT id FROM payment_orders WHERE method='instapay' AND transfer_reference=? AND status IN ('submitted','paid') LIMIT 1").bind(ref).first<{id:string}>()
+  if(duplicate)return json('رقم المرجع مسجل بالفعل لطلب آخر.',409)
   const updated=await c.env.DB.prepare("UPDATE payment_orders SET transfer_reference=?,status='submitted',updated_at=? WHERE id=? AND user_id=? AND method='instapay' AND status='pending'")
     .bind(ref,Math.floor(Date.now()/1000),body.orderId,c.get('userId')).run()
   if((updated.meta?.changes||0)!==1)return json('طلب الدفع غير متاح للإرسال أو سبق إرساله.',409)
   return c.json({ok:true,status:'submitted',message:'تم استلام مرجع التحويل. سيظل الاشتراك معلقاً حتى مراجعة التحويل وتأكيد وصول المبلغ.'})
+})
+app.get('/api/admin/payments/instapay/pending',async c=>{
+  if(!c.env.ADMIN_REVIEW_SECRET||!constantTimeEqual(c.req.header('X-Admin-Review-Secret')||'',c.env.ADMIN_REVIEW_SECRET))return json('Unauthorized',401)
+  const rows=await c.env.DB.prepare("SELECT id,user_id,plan,amount_minor,currency,transfer_reference,created_at FROM payment_orders WHERE method='instapay' AND status='submitted' ORDER BY created_at ASC LIMIT 100").all()
+  return c.json({orders:rows.results||[]})
 })
 app.post('/api/admin/payments/instapay/review',async c=>{
   if(!c.env.ADMIN_REVIEW_SECRET||!constantTimeEqual(c.req.header('X-Admin-Review-Secret')||'',c.env.ADMIN_REVIEW_SECRET))return json('Unauthorized',401)
