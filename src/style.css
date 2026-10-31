@@ -4,3 +4,16 @@
 @media(max-width:900px){.shell{padding-inline:4%}.nav{padding-inline:15px}nav{gap:0}nav button{padding:9px 8px;font-size:12px}.hero{gap:15px;padding-inline:1%}.hero h1{font-size:56px}.hero-visual{transform:scale(.88)}.plans-grid{gap:12px}.plan{padding:23px 17px}}
 @media(max-width:650px){.shell{padding:13px 17px 0}.nav{height:65px;padding:0 12px}.logo{font-size:16px}.logo-symbol{width:28px;height:28px}nav{display:none}.nav-cta{font-size:11px;padding:9px 10px}.lang{padding:8px 9px;font-size:11px}.menu{display:block;padding:7px}.hero{grid-template-columns:1fr;padding:58px 1% 30px;gap:8px}.hero h1{font-size:clamp(43px,12vw,58px);letter-spacing:-1px;margin:19px 0 13px}.hero-copy>p{font-size:15px}.hero-actions{gap:8px;flex-wrap:wrap}.btn-primary,.btn-outline,.btn-ghost{padding:12px 14px;font-size:12px;gap:10px}.trust-row{gap:12px;margin-top:27px;font-size:8px}.hero-visual{height:330px;transform:scale(.83);margin:-5px -25px}.holo-card{width:320px;height:305px}.tag-one{right:0;top:17px}.tag-two{left:0;bottom:18px}.orbit-1{width:380px}.metrics{padding:18px 0;gap:10px}.metrics>div{display:grid;gap:6px}.metrics strong{font-size:22px}.metrics span{font-size:10px;line-height:1.5}.feature-section{padding:62px 0}.section-head h2{font-size:26px}.feature-grid,.plans-grid{grid-template-columns:1fr}.feature{min-height:0;padding:20px}.feature-icon{margin:15px 0 10px}.cta-panel{padding:22px;align-items:flex-start;flex-direction:column;margin-bottom:45px}.footer{flex-wrap:wrap;padding:20px 0;min-height:90px}.footer>span:nth-child(2){order:3;width:100%}.footer-status{font-size:8px}.page-section{padding:55px 0 65px}.page-title{font-size:35px}.page-sub{font-size:13px}.upload-panel{padding:25px 16px;min-height:330px}.proof-buttons{flex-direction:column;align-items:stretch}.proof-buttons button{width:100%}.plan{min-height:0}.plan ul{min-height:0}.dashboard-grid{grid-template-columns:1fr}.links-panel{grid-template-columns:1fr}.auth-panel{padding:22px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}}
+
+.egp-equivalent{font:500 12px 'IBM Plex Mono',monospace;color:var(--teal);margin:-2px 0 14px}
+.payment-actions{display:grid;gap:10px;margin-top:16px}
+.payment-actions button{width:100%;min-height:48px;line-height:1.55}
+.insta-checkout{max-width:620px;margin:28px auto 0;padding:26px;border-radius:15px;display:grid;gap:14px}
+.insta-checkout h2{margin:0;font-size:23px}
+.insta-checkout>p{margin:0;color:var(--muted);font-size:13px;line-height:1.8}
+.insta-amount{font:600 38px 'IBM Plex Mono',monospace;color:var(--teal)}
+.insta-amount small{font:500 14px 'Tajawal',sans-serif}
+.insta-checkout label{display:grid;gap:8px;color:#bed0d0;font-size:13px}
+.insta-checkout input{width:100%;border:1px solid rgba(92,243,223,.2);background:rgba(2,11,16,.65);color:#eafffc;border-radius:8px;padding:13px 14px;outline:none;direction:ltr;text-align:left}
+.insta-checkout input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(92,243,223,.07)}
+@media(max-width:650px){.payment-actions button{font-size:11px;padding:12px 9px}.insta-checkout{padding:19px;margin-top:22px}.insta-checkout h2{font-size:20px}}
