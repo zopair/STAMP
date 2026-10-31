@@ -121,7 +121,7 @@ app.post('/api/billing/intent', async c => {
   const body=await c.req.json<{plan?:string;method?:string}>()
   const plan=body.plan as keyof typeof planPrices
   const method=body.method
-  if (!(plan in planPrices) || !['binance','instapay'].includes(method||'')) return json('خطة أو وسيلة دفع غير صحيحة')
+  if (!Object.prototype.hasOwnProperty.call(planPrices,plan) || !['binance','instapay'].includes(method||'')) return json('خطة أو وسيلة دفع غير صحيحة')
   const usd=planPrices[plan], egp=usd*55, now=Math.floor(Date.now()/1000), id=crypto.randomUUID()
   const merchantTradeNo=id.replace(/-/g,'').slice(0,32)
   if (method==='binance') {
