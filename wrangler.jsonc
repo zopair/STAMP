@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stamp-api",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-31",
+  "workers_dev": true,
+  "vars": {
+    "SITE_ORIGIN": "https://zopair.github.io",
+    "META_GRAPH_VERSION": "v23.0"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "stamp-production",
+      "database_id": "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID",
+      "migrations_dir": "worker/migrations"
+    }
+  ]
+}
