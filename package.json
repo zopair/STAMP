@@ -6,17 +6,23 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "api:dev": "wrangler dev --config wrangler.jsonc",
+    "api:deploy": "wrangler deploy --config wrangler.jsonc",
+    "db:local": "wrangler d1 migrations apply stamp-production --local --config wrangler.jsonc",
+    "db:remote": "wrangler d1 migrations apply stamp-production --remote --config wrangler.jsonc"
   },
   "dependencies": {
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "hono": "^4.9.8"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "~5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "wrangler": "^4.40.0"
   }
 }
