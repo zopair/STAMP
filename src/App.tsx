@@ -24,6 +24,7 @@ export default function App() {
   const [lang, setLang] = useState<'ar'|'en'>('ar')
   const [file, setFile] = useState<File | null>(null)
   const [proof, setProof] = useState<Proof | null>(null)
+  const [showTechnical, setShowTechnical] = useState(false)
   const [busy, setBusy] = useState(false)
   const [tab, setTab] = useState('home')
   const [email, setEmail] = useState('')
@@ -51,7 +52,7 @@ export default function App() {
   useEffect(() => { if (API) request<{user:User}>('/api/me').then(d => setUser(d.user)).catch(() => {}) }, [])
 
   async function fingerprint(f: File) {
-    setError(''); setProof(null); setFile(f)
+    setError(''); setNotice(''); setProof(null); setShowTechnical(false); setFile(f)
     if (f.size > 100 * 1024 * 1024) { setError('الحد الأقصى الحالي 100 ميجابايت'); return }
     setBusy(true)
     try {
@@ -60,10 +61,53 @@ export default function App() {
       setProof({ fileName:f.name, fileSize:f.size, sha256, createdAt:new Date().toISOString() })
     } catch { setError('تعذر قراءة الملف') } finally { setBusy(false) }
   }
+  function receiptData() {
+    if (!proof) return null
+    return { product:'STAMP', version:'0.2', ...proof, timestampType:'client-device-time; not independently trusted' }
+  }
   function receipt() {
+    const data=receiptData()
+    if (!data) return
+    const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'})
+    const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='STAMP-'+proof!.sha256.slice(0,12)+'.json'; a.click(); URL.revokeObjectURL(url)
+  }
+  function printCertificate() {
     if (!proof) return
-    const blob = new Blob([JSON.stringify({ product:'STAMP', version:'0.2', ...proof, timestampType:'client-device-time; not independently trusted' },null,2)],{type:'application/json'})
-    const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='STAMP-'+proof.sha256.slice(0,12)+'.json'; a.click(); URL.revokeObjectURL(url)
+    window.print()
+  }
+  async function copyCertificateImage() {
+    if (!proof) return
+    try {
+      const canvas=document.createElement('canvas')
+      canvas.width=1400; canvas.height=900
+      const ctx=canvas.getContext('2d')
+      if (!ctx) throw new Error('تعذر تجهيز الصورة')
+      const bg=ctx.createLinearGradient(0,0,1400,900); bg.addColorStop(0,'#07151b'); bg.addColorStop(1,'#101d2a')
+      ctx.fillStyle=bg; ctx.fillRect(0,0,1400,900)
+      ctx.strokeStyle='#5cf3df'; ctx.lineWidth=3; ctx.strokeRect(34,34,1332,832)
+      ctx.strokeStyle='rgba(92,243,223,.35)'; ctx.lineWidth=1; ctx.strokeRect(50,50,1300,800)
+      ctx.fillStyle='#5cf3df'; ctx.beginPath(); ctx.roundRect(92,82,74,74,18); ctx.fill()
+      ctx.fillStyle='#06201d'; ctx.font='bold 48px Arial'; ctx.textAlign='center'; ctx.fillText('S',129,137)
+      ctx.fillStyle='#f0ffff'; ctx.textAlign='left'; ctx.font='bold 42px Arial'; ctx.fillText('STAMP',190,135)
+      ctx.fillStyle='#91a8ad'; ctx.font='20px Arial'; ctx.fillText('DIGITAL FINGERPRINT CERTIFICATE',190,174)
+      ctx.fillStyle='#5cf3df'; ctx.font='bold 27px Arial'; ctx.fillText('✓  FINGERPRINT CREATED',92,250)
+      ctx.fillStyle='#e8f5f4'; ctx.font='bold 24px Arial'; ctx.fillText('FILE',92,330)
+      ctx.font='30px Arial'; ctx.fillText(proof.fileName.slice(0,58),92,376)
+      ctx.fillStyle='#91a8ad'; ctx.font='19px Arial'; ctx.fillText('FILE SIZE',92,438)
+      ctx.fillStyle='#e8f5f4'; ctx.font='26px Arial'; ctx.fillText(money(proof.fileSize),92,478)
+      ctx.fillStyle='#91a8ad'; ctx.font='19px Arial'; ctx.fillText('CREATED ON · DEVICE TIME',720,438)
+      ctx.fillStyle='#e8f5f4'; ctx.font='24px Arial'; ctx.fillText(new Date(proof.createdAt).toLocaleString(),720,478)
+      ctx.fillStyle='#91a8ad'; ctx.font='19px Arial'; ctx.fillText('SHA-256 FINGERPRINT',92,570)
+      ctx.fillStyle='#5cf3df'; ctx.font='22px monospace'; ctx.fillText(proof.sha256.slice(0,64),92,615)
+      ctx.fillText(proof.sha256.slice(64),92,653)
+      ctx.strokeStyle='rgba(92,243,223,.35)'; ctx.beginPath(); ctx.moveTo(92,710); ctx.lineTo(1308,710); ctx.stroke()
+      ctx.fillStyle='#91a8ad'; ctx.font='18px Arial'; ctx.fillText('STAMP · YOUR WORK. YOUR PROOF.',92,765)
+      ctx.textAlign='right'; ctx.fillStyle='#5cf3df'; ctx.fillText('SHA-256',1308,765)
+      const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('تعذر إنشاء الصورة')),'image/png'))
+      if (!navigator.clipboard?.write || typeof ClipboardItem==='undefined') throw new Error('نسخ الصور غير مدعوم في هذا المتصفح. استخدم PDF أو لقطة شاشة.')
+      await navigator.clipboard.write([new ClipboardItem({'image/png':blob})])
+      setNotice('تم نسخ شهادة STAMP كصورة.')
+    } catch(e) { setError((e as Error).message) }
   }
   async function sendOtp() {
     setError(''); setNotice('')
@@ -139,7 +183,19 @@ export default function App() {
       <section className="cta-panel glass"><div><div className="kicker">READY WHEN YOU ARE</div><h2>ابدأ ببصمتك الأولى</h2><p>جرّب حساب البصمة الآن، ثم استكشف خيارات الاشتراك.</p></div><button className="btn-primary" onClick={()=>setTab('evidence')}>ابدأ الآن <b>↗</b></button></section>
     </>}
 
-    {tab==='evidence' && <section className="page-section"><div className="kicker">01 / FILE EVIDENCE</div><h1 className="page-title">{labels.fileTitle}</h1><p className="page-sub">حساب محلي سريع. لا يتم رفع محتوى الملف إلى الخادم في هذه الخطوة.</p><div className="upload-panel glass" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) void fingerprint(f)}}><input ref={input} type="file" hidden onChange={e=>{const f=e.target.files?.[0];if(f)void fingerprint(f)}}/><div className="upload-symbol">⇧</div><h2>{busy?labels.hashing:proof?labels.proof:labels.drop}</h2><p>{file?file.name:labels.local}</p>{!proof?<button className="btn-primary" disabled={busy} onClick={()=>input.current?.click()}>{labels.choose} <b>＋</b></button>:<div className="proof-data"><div><small>{labels.hash}</small><code>{proof.sha256}</code></div><div><small>FILE / SIZE</small><strong>{proof.fileName} · {money(proof.fileSize)}</strong></div><div><small>CLIENT TIME</small><strong>{new Date(proof.createdAt).toLocaleString()}</strong></div><div className="proof-buttons"><button className="btn-primary" onClick={receipt}>{labels.save} ↓</button><button className="btn-ghost" onClick={()=>{setProof(null);setFile(null);if(input.current)input.current.value=''}}>{labels.another}</button></div></div>}{error&&<p className="error">{error}</p>}</div><p className="legal-note">تنبيه: SHA-256 يثبت تطابق محتوى الملف مع بصمة محفوظة، لكنه وحده لا يثبت المؤلف أو الملكية القانونية أو وقت الإنشاء. وقت الإيصال الحالي هو وقت جهازك وليس ختمًا زمنياً مستقلاً.</p></section>}
+    {tab==='evidence' && <section className="page-section"><div className="kicker">01 / FILE EVIDENCE</div><h1 className="page-title">{labels.fileTitle}</h1><p className="page-sub">حساب محلي سريع. لا يتم رفع محتوى الملف إلى الخادم في هذه الخطوة.</p><div className="upload-panel glass" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) void fingerprint(f)}}><input ref={input} type="file" hidden onChange={e=>{const f=e.target.files?.[0];if(f)void fingerprint(f)}}/><div className="upload-symbol">⇧</div><h2>{busy?labels.hashing:proof?labels.proof:labels.drop}</h2><p>{file?file.name:labels.local}</p>{!proof?<button className="btn-primary" disabled={busy} onClick={()=>input.current?.click()}>{labels.choose} <b>＋</b></button>:<div className="certificate-wrap">
+            <article className="certificate-card" id="stamp-certificate">
+              <div className="certificate-top"><div className="certificate-brand"><span className="certificate-logo">S</span><div><strong>STAMP<span>.</span></strong><small>DIGITAL FINGERPRINT CERTIFICATE</small></div></div><div className="certificate-seal"><b>✓</b><span>STAMPED</span></div></div>
+              <div className="certificate-status"><i/> تم إنشاء البصمة الرقمية بنجاح</div>
+              <div className="certificate-file"><small>اسم الملف / FILE NAME</small><strong>{proof.fileName}</strong></div>
+              <div className="certificate-meta"><div><small>حجم الملف</small><strong>{money(proof.fileSize)}</strong></div><div><small>تاريخ ووقت العملية · توقيت الجهاز</small><strong>{new Date(proof.createdAt).toLocaleString(rtl?'ar-EG':'en-GB',{dateStyle:'long',timeStyle:'short'})}</strong></div></div>
+              <div className="certificate-hash"><small>SHA-256 DIGITAL FINGERPRINT</small><code>{proof.sha256}</code></div>
+              <div className="certificate-footer"><span>STAMP · YOUR WORK. YOUR PROOF.</span><span>SHA-256 / 256 BIT</span></div>
+            </article>
+            <div className="certificate-actions"><button className="btn-primary" onClick={printCertificate}>تنزيل / طباعة PDF ↓</button><button className="btn-outline" onClick={()=>void copyCertificateImage()}>نسخ الشهادة كصورة</button><button className="btn-ghost" onClick={()=>setShowTechnical(v=>!v)}>{showTechnical?'إخفاء البيانات التقنية':'عرض البيانات التقنية'} ⌄</button></div>
+            {showTechnical&&<div className="technical-receipt"><div className="technical-head"><strong>JSON Receipt</strong><button className="btn-outline" onClick={receipt}>تنزيل JSON ↓</button></div><pre>{JSON.stringify(receiptData(),null,2)}</pre></div>}
+            <button className="btn-ghost certificate-new" onClick={()=>{setProof(null);setFile(null);setShowTechnical(false);setNotice('');if(input.current)input.current.value=''}}>{labels.another}</button>
+          </div>}{notice&&<p className="notice">{notice}</p>}{error&&<p className="error">{error}</p>}</div><p className="legal-note">تنبيه: SHA-256 يثبت تطابق محتوى الملف مع بصمة محفوظة، لكنه وحده لا يثبت المؤلف أو الملكية القانونية أو وقت الإنشاء. وقت الإيصال الحالي هو وقت جهازك وليس ختمًا زمنياً مستقلاً.</p></section>}
 
     {tab==='plans' && <section className="page-section"><div className="kicker">02 / MEMBERSHIP</div><h1 className="page-title">اختر مستوى <span>حماية أعمالك</span></h1><p className="page-sub">اختر باقتك ثم وسيلة الدفع. أسعار الدولار ثابتة، ويُحسب المقابل بالجنيه بسعر 55 جنيهاً للدولار.</p><div className="plans-grid">{plans.map(p=><article className={'plan glass '+(p.featured?'featured':'')} key={p.id}>{p.featured&&<div className="popular">الأكثر قيمة</div>}<div className="plan-name">{p.name}</div><div className="price">{p.price}<small>{p.period}</small></div><div className="egp-equivalent">ما يعادل {({monthly:275,yearly:2750,lifetime:5500} as Record<string,number>)[p.id].toLocaleString('en-US')} EGP</div><p>{p.detail}</p><ul>{p.perks.map(x=><li key={x}><i>✓</i>{x}</li>)}</ul><div className="payment-actions"><button className="btn-primary" disabled={paymentBusy} onClick={()=>void checkout(p.id,'binance')}>الدفع عبر باينانس (USDT)</button><button className="btn-outline" disabled={paymentBusy} onClick={()=>void checkout(p.id,'instapay')}>الدفع عبر إنستا باي (InstaPay - EGP)</button></div></article>)}</div>{instaPayment&&<div className="insta-checkout glass"><div className="kicker">INSTAPAY / TRANSFER</div><h2>أكمل التحويل بالجنيه المصري</h2><div className="insta-amount">{instaPayment.amount.toLocaleString('en-US')} <small>EGP</small></div><p>سعر التحويل الثابت: 1 USD = {instaPayment.exchangeRate} EGP</p><p>استخدم رابط الدفع الآمن المرتبط برمز QR الخاص بحسابك. يمكنك فتحه مباشرة أو نسخه لإتمام التحويل داخل InstaPay.</p><div className="payment-actions"><button className="btn-primary" onClick={openInstaPayLink}>فتح رابط InstaPay</button><button className="btn-outline" onClick={()=>void copyInstaPayLink()}>نسخ رابط الدفع</button></div><label>مرجع التحويل بعد إتمام العملية<input value={transferReference} onChange={e=>setTransferReference(e.target.value)} placeholder="أدخل رقم مرجع التحويل" maxLength={100}/></label><button className="btn-outline full" disabled={transferReference.trim().length<6} onClick={()=>void submitInstaPay()}>إرسال مرجع التحويل للمراجعة</button><p className="legal-note">لن يُفعّل الاشتراك بمجرد إرسال المرجع؛ يتم تفعيله بعد مراجعة وصول التحويل من الإدارة.</p></div>}{notice&&<p className="notice">{notice}</p>}{error&&<p className="error">{error}</p>}<p className="legal-note">الدفع عبر Binance يتم من خلال صفحة Binance Pay الرسمية، ويُفعّل الاشتراك بعد إشعار دفع موثّق. InstaPay تحويل مباشر ويتطلب إدخال مرجع العملية ومراجعة إدارية قبل التفعيل.</p></section>}
 
