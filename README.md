@@ -27,7 +27,7 @@ STAMP is being developed as a product for creating and managing verifiable digit
 The subscription page offers two payment actions per plan:
 
 - **Binance Pay (USDT):** the backend creates a merchant checkout order using the official Binance Pay API. The browser receives only the Binance checkout URL, not a recipient UID. Configure the merchant API key/secret and webhook public key as server-side secrets. The subscription is activated only after the signed Binance webhook is verified and the received amount/currency matches the pending order.
-- **InstaPay (EGP):** the backend calculates EGP at the fixed rate of **55 EGP per USD** (monthly 275 EGP, yearly 2,750 EGP, lifetime 5,500 EGP). The recipient IPA/mobile value is stored only in the backend secret INSTAPAY_RECIPIENT; it is returned only to the authenticated payer after they create an InstaPay order and is never rendered as text. The page offers a copy action, then asks for the transfer reference. The order remains submitted until an administrator checks the actual incoming transfer and approves it.
+- **InstaPay (EGP):** the backend calculates EGP at the fixed rate of **55 EGP per USD** (monthly 275 EGP, yearly 2,750 EGP, lifetime 5,500 EGP). The signed InstaPay QR payment URL is stored only in the backend secret INSTAPAY_PAYMENT_LINK; it is returned only to the authenticated payer after they create an InstaPay order and is never rendered as text. The page offers a copy action, then asks for the transfer reference. The order remains submitted until an administrator checks the actual incoming transfer and approves it.
 
 ### Required server secrets
 
