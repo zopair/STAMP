@@ -76,6 +76,19 @@ SEO automation, video generation and social-platform publishing are product requ
 - No GitHub token, Resend key, Meta token, Stripe secret or session secret belongs in frontend code.
 - Do not advertise the platform as providing legal certification until independent timestamping, immutable evidence records and the applicable legal process have been reviewed.
 
+## OpenTimestamps proof (GitHub Actions)
+
+The repository includes a manual workflow at **Actions → Create OpenTimestamps proof**.
+
+1. Calculate the original file's SHA-256 locally (the file itself is not uploaded).
+2. Open the workflow and enter the 64-character digest.
+3. Download the generated `stamp-ots-proof-<run-id>` artifact. It contains `evidence.txt` and `evidence.txt.ots`.
+4. Verify the downloaded proof with the OpenTimestamps client: `ots verify evidence.txt.ots`.
+
+The workflow submits only a manifest containing the digest to public OpenTimestamps calendars. The proof may initially be pending; Bitcoin confirmation is asynchronous and can take hours. Keep the downloaded artifact permanently yourself: GitHub Actions artifacts expire after 90 days by default in this workflow.
+
+This is a maintainer-operated proof workflow, not yet a customer-facing automated feature. It proves that the submitted digest existed no later than the eventual Bitcoin anchor; it does not by itself identify the author or establish legal ownership.
+
 ## Development
 
 ```bash
