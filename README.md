@@ -15,9 +15,38 @@ STAMP is being developed as a product for creating and managing verifiable digit
 - Cloudflare D1 initial schema in `worker/migrations/0001_initial.sql`.
 - Email OTP through Resend and WhatsApp OTP through the official Meta WhatsApp Cloud API.
 - Hashed OTP storage, 10-minute expiry, per-email/phone/IP request throttling, a five-attempt verification ceiling, atomic one-time code consumption, hashed opaque sessions, and D1-backed account lookup.
-- Stripe Checkout session creation for monthly, yearly and lifetime price IDs.
-- Payment entitlements are **not activated**: the Stripe webhook currently fails closed until signature verification and event reconciliation are implemented.
+- Binance Pay checkout via the official Merchant API, with server-side HMAC request signing and RSA/SHA-256 webhook verification.
+- InstaPay direct-transfer orders in EGP at a fixed 55 EGP/USD rate, with recipient data stored as a server secret, copy-only delivery to the authenticated payer, transfer-reference submission, and an authenticated internal review endpoint.
+- Binance subscription activation occurs only after a signed, amount-matched PAY_SUCCESS webhook. InstaPay activation occurs only after an administrator approves the submitted transfer reference.
+- Payment provider credentials and recipient details are server secrets; never place them in Vite environment variables or frontend code.
 - GitHub repository provisioning, server-side evidence commits, independent trusted timestamping, and SEO/video generation are not yet implemented.
+
+
+## Direct payment methods
+
+The subscription page offers two payment actions per plan:
+
+- **Binance Pay (USDT):** the backend creates a merchant checkout order using the official Binance Pay API. The browser receives only the Binance checkout URL, not a recipient UID. Configure the merchant API key/secret and webhook public key as server-side secrets. The subscription is activated only after the signed Binance webhook is verified and the received amount/currency matches the pending order.
+- **InstaPay (EGP):** the backend calculates EGP at the fixed rate of **55 EGP per USD** (monthly 275 EGP, yearly 2,750 EGP, lifetime 5,500 EGP). The recipient IPA/mobile value is stored only in the backend secret INSTAPAY_RECIPIENT; it is returned only to the authenticated payer after they create an InstaPay order and is never rendered as text. The page offers a copy action, then asks for the transfer reference. The order remains submitted until an administrator checks the actual incoming transfer and approves it.
+
+### Required server secrets
+
+Configure these as Worker secrets (not repository variables and never VITE_*):
+- BINANCE_PAY_API_KEY
+- BINANCE_PAY_SECRET_KEY
+- BINANCE_PAY_PUBLIC_KEY (the Binance Pay webhook verification public key/certificate)
+- INSTAPAY_RECIPIENT (the recipient IPA or registered mobile number)
+- ADMIN_REVIEW_SECRET (a long random secret used only by the internal InstaPay review endpoint)
+
+Set the Binance Pay webhook URL to /api/billing/binance/webhook. Obtain merchant credentials and the webhook public key from the Binance Pay Merchant dashboard. A personal Binance UID alone is not a substitute for merchant API credentials and signed payment notifications.
+
+### InstaPay manual review endpoint
+
+POST /api/admin/payments/instapay/review requires the X-Admin-Review-Secret header and JSON { "orderId": "...", "approve": true|false }. Keep this secret in a trusted admin tool only; never call this endpoint from the public frontend. Approval marks the payment paid and activates the plan. Rejection leaves the subscription inactive. InstaPay does not provide a public merchant API for third-party apps to independently confirm a transfer, so the operator must verify the bank/InstaPay incoming transaction before approval. The customer-submitted reference alone is not proof of payment.
+
+### Important
+
+The recipient value is hidden from the public subscription page and is not included in the frontend bundle. It is intentionally delivered only to the authenticated payer's checkout request so they can copy it into InstaPay; a payer can still inspect data delivered to their own browser. Never promise that the recipient identifier is invisible to the person who must send the transfer. Do not activate subscriptions from screenshots, client-side status, or redirect URLs.
 
 ## Frontend deployment
 
