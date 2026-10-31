@@ -27,7 +27,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           # No npm cache until package-lock.json is committed.
           # setup-node's npm cache requires a lockfile to calculate its cache key.
 
