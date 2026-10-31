@@ -14,7 +14,7 @@ type Env = {
   BINANCE_PAY_SECRET_KEY: string
   BINANCE_PAY_PUBLIC_KEY: string
   BINANCE_PAY_WEBHOOK_CERT_SN: string
-  INSTAPAY_RECIPIENT: string
+  INSTAPAY_PAYMENT_LINK: string
   ADMIN_REVIEW_SECRET: string
   GITHUB_CLIENT_ID: string
   GITHUB_CLIENT_SECRET: string
@@ -152,10 +152,12 @@ app.post('/api/billing/intent', async c => {
       .bind(result.data.prepayId,checkoutUrl,Math.floor(Date.now()/1000),id).run()
     return c.json({orderId:id,method,amount:usd,currency:'USDT',checkoutUrl})
   }
-  if (!c.env.INSTAPAY_RECIPIENT) return json('بيانات استقبال InstaPay غير مهيأة على الخادم. لم يتم إنشاء طلب.',503)
+  if (!c.env.INSTAPAY_PAYMENT_LINK) return json('رابط InstaPay الآمن غير مهيأ على الخادم. لم يتم إنشاء طلب.',503)
+  let instaPayUrl: URL
+  try { instaPayUrl = new URL(c.env.INSTAPAY_PAYMENT_LINK); if (instaPayUrl.protocol !== 'https:' || instaPayUrl.hostname !== 'ipn.eg' || !instaPayUrl.pathname.startsWith('/C/Q/')) throw new Error('Invalid InstaPay payment link') } catch { return json('إعداد رابط InstaPay على الخادم غير صالح.',503) }
   await c.env.DB.prepare('INSERT INTO payment_orders(id,user_id,merchant_trade_no,plan,method,amount_minor,currency,usd_amount_cents,exchange_rate,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
     .bind(id,c.get('userId'),merchantTradeNo,plan,'instapay',egp*100,'EGP',usd*100,55,'pending',now,now).run()
-  return c.json({orderId:id,method:'instapay',amount:egp,currency:'EGP',exchangeRate:55,recipient:c.env.INSTAPAY_RECIPIENT,status:'pending'})
+  return c.json({orderId:id,method:'instapay',amount:egp,currency:'EGP',exchangeRate:55,paymentLink:instaPayUrl.toString(),status:'pending'})
 })
 app.get('/api/billing/order/:id',async c=>{
   const row=await c.env.DB.prepare('SELECT id,plan,method,amount_minor,currency,status,transfer_reference,created_at,paid_at FROM payment_orders WHERE id=? AND user_id=?')
