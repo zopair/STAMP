@@ -16,7 +16,7 @@ STAMP is being developed as a product for creating and managing verifiable digit
 - Email OTP through Resend and WhatsApp OTP through the official Meta WhatsApp Cloud API.
 - Hashed OTP storage, 10-minute expiry, per-email/phone/IP request throttling, a five-attempt verification ceiling, atomic one-time code consumption, hashed opaque sessions, and D1-backed account lookup.
 - Binance Pay checkout via the official Merchant API, with server-side HMAC request signing and RSA/SHA-256 webhook verification.
-- InstaPay direct-transfer orders in EGP at a fixed 55 EGP/USD rate, with recipient data stored as a server secret, copy-only delivery to the authenticated payer, transfer-reference submission, and an authenticated internal review endpoint.
+- InstaPay direct-transfer orders in EGP at a fixed 55 EGP/USD rate, with the owner's shareable signed QR payment link returned to the authenticated payer, transfer-reference submission, and an authenticated internal review endpoint.
 - Binance subscription activation occurs only after a signed, amount-matched PAY_SUCCESS webhook. InstaPay activation occurs only after an administrator approves the submitted transfer reference.
 - Payment provider credentials and recipient details are server secrets; never place them in Vite environment variables or frontend code.
 - GitHub repository provisioning, server-side evidence commits, independent trusted timestamping, and SEO/video generation are not yet implemented.
@@ -27,7 +27,7 @@ STAMP is being developed as a product for creating and managing verifiable digit
 The subscription page offers two payment actions per plan:
 
 - **Binance Pay (USDT):** the backend creates a merchant checkout order using the official Binance Pay API. The browser receives only the Binance checkout URL, not a recipient UID. Configure the merchant API key/secret and webhook public key as server-side secrets. The subscription is activated only after the signed Binance webhook is verified and the received amount/currency matches the pending order.
-- **InstaPay (EGP):** the backend calculates EGP at the fixed rate of **55 EGP per USD** (monthly 275 EGP, yearly 2,750 EGP, lifetime 5,500 EGP). The signed InstaPay QR payment URL is stored only in the backend secret INSTAPAY_PAYMENT_LINK; it is returned only to the authenticated payer after they create an InstaPay order and is never rendered as text. The page offers a copy action, then asks for the transfer reference. The order remains submitted until an administrator checks the actual incoming transfer and approves it.
+- **InstaPay (EGP):** the backend calculates EGP at the fixed rate of **55 EGP per USD** (monthly 275 EGP, yearly 2,750 EGP, lifetime 5,500 EGP). The signed InstaPay QR payment URL from the owner's supplied QR is configured in the backend source; it is returned only to the authenticated payer after they create an InstaPay order and is never rendered as text. The page offers a copy action, then asks for the transfer reference. The order remains submitted until an administrator checks the actual incoming transfer and approves it.
 
 ### Required server secrets
 
@@ -36,18 +36,17 @@ Configure these as Worker secrets (not repository variables and never VITE_*):
 - BINANCE_PAY_SECRET_KEY
 - BINANCE_PAY_PUBLIC_KEY (the Binance Pay webhook verification public key/certificate)
 - BINANCE_PAY_WEBHOOK_CERT_SN (the matching Binance Pay webhook certificate serial)
-- INSTAPAY_RECIPIENT (the recipient IPA or registered mobile number)
 - ADMIN_REVIEW_SECRET (a long random secret used only by the internal InstaPay review endpoint)
 
 Set the Binance Pay webhook URL to /api/billing/binance/webhook. Obtain merchant credentials and the webhook public key from the Binance Pay Merchant dashboard. A personal Binance UID alone is not a substitute for merchant API credentials and signed payment notifications.
 
 ### InstaPay manual review endpoint
 
-POST /api/admin/payments/instapay/review requires the X-Admin-Review-Secret header and JSON { "orderId": "...", "approve": true|false }. Keep this secret in a trusted admin tool only; never call this endpoint from the public frontend. Approval marks the payment paid and activates the plan. Rejection leaves the subscription inactive. InstaPay does not provide a public merchant API for third-party apps to independently confirm a transfer, so the operator must verify the bank/InstaPay incoming transaction before approval. The customer-submitted reference alone is not proof of payment.
+POST /api/admin/payments/instapay/review requires the X-Admin-Review-Secret header and JSON { "orderId": "...", "approve": true|false }. Keep this secret in a trusted admin tool only; never call this endpoint from the public frontend. Approval marks the payment paid and activates the plan. Rejection leaves the subscription inactive. InstaPay does not provide a public merchant API for third-party apps to independently confirm a transfer, so the operator must verify the bank/InstaPay incoming transaction before approval. The submitted reference is matched to a unique payment order; the operator confirms the incoming credit before approval.
 
 ### Important
 
-The recipient value is hidden from the public subscription page and is not included in the frontend bundle. It is intentionally delivered only to the authenticated payer's checkout request so they can copy it into InstaPay; a payer can still inspect data delivered to their own browser. Never promise that the recipient identifier is invisible to the person who must send the transfer. Do not activate subscriptions from screenshots, client-side status, or redirect URLs.
+The QR payment URL is intentionally shareable; it is not a password or account credential. It is intentionally delivered only to the authenticated payer's checkout request so they can copy it into InstaPay; a payer can still inspect data delivered to their own browser. Never promise that the recipient identifier is invisible to the person who must send the transfer. Do not activate subscriptions from screenshots, client-side status, or redirect URLs.
 
 ## Frontend deployment
 
@@ -79,8 +78,7 @@ GitHub Pages cannot execute the Worker or securely store server credentials. The
    npx wrangler secret put BINANCE_PAY_SECRET_KEY
    npx wrangler secret put BINANCE_PAY_PUBLIC_KEY
    npx wrangler secret put BINANCE_PAY_WEBHOOK_CERT_SN
-   npx wrangler secret put INSTAPAY_RECIPIENT
-   npx wrangler secret put ADMIN_REVIEW_SECRET
+      npx wrangler secret put ADMIN_REVIEW_SECRET
    ```
    Legacy note: the current account OTP implementation still depends on Resend and the official Meta WhatsApp Cloud API. These are not open-source self-hosted services; migrate this authentication delivery path before claiming the full platform is independent of commercial providers. Configure and approve the WhatsApp template named `stamp_otp` only if testing this legacy adapter.
 6. Deploy the Worker:
