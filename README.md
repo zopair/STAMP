@@ -58,6 +58,8 @@ GitHub Pages cannot execute the Worker or securely store server credentials. To 
    ```
 7. Build the frontend with `VITE_API_BASE_URL` set to the Worker origin and publish the new Pages build.
 
+**Important browser-session constraint:** the current GitHub Pages origin (`github.io`) and a default Worker origin (`workers.dev`) are cross-site. Although the cookie is configured with `SameSite=None; Secure`, browsers that block third-party cookies may not persist or send the session cookie. Do not launch paid account access on this split-origin setup. Before production, use a custom domain with the frontend and API under the same site (for example, `app.example.com` and `api.example.com`) or move the frontend and API behind a same-origin Cloudflare deployment. Verify login, refresh, and logout on real mobile browsers.
+
 The monthly/yearly Stripe Price IDs must be recurring prices; the lifetime Price ID must be a one-time price. Configure the Stripe webhook endpoint only after its signature verification and idempotent event handler are implemented. Do not use a browser redirect as proof of payment.
 
 ## Plan definitions
