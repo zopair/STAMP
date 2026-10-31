@@ -1,0 +1,58 @@
+name: STAMP quality gates
+
+on:
+  push:
+    branches: [main, "ops/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck and build
+        run: npm run build
+
+  worker:
+    name: Worker bundle validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Create CI-only Cloudflare config
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const c=fs.readFileSync('wrangler.jsonc','utf8').replace('REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID','00000000-0000-4000-8000-000000000001'); fs.writeFileSync('wrangler.ci.jsonc',c)"
+      - name: Bundle Worker without deploying
+        run: npx wrangler deploy --dry-run --outdir .wrangler-ci --config wrangler.ci.jsonc
+
+  dependency-audit:
+    name: Dependency vulnerability report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
