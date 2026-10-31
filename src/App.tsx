@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 type Proof = { fileName: string; fileSize: number; sha256: string; createdAt: string }
 type User = { id: string; email: string; phone?: string; plan?: string; renewAt?: string; paymentStatus?: string; webUrl?: string; repoUrl?: string }
 type ApiError = { error?: string; message?: string }
-type InstaPayment = { orderId:string; amount:number; currency:'EGP'; exchangeRate:number; paymentLink:string }
 const API = (import.meta as any).env.VITE_API_BASE_URL?.replace(/\/$/, '') || ''
 const plans = [
   { id: 'monthly', name: 'شهري', price: '$5', period: '/ شهر', detail: 'توثيق وسجل أدلة أساسي', perks: ['بصمات وملفات غير محدودة*', 'سجل تحقق قابل للمشاركة', 'لوحة تحكم شخصية'] },
@@ -34,8 +33,6 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [stars, setStars] = useState<number | null>(null)
-  const [instaPayment, setInstaPayment] = useState<InstaPayment | null>(null)
-  const [transferReference, setTransferReference] = useState('')
   const [paymentBusy, setPaymentBusy] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const rtl = lang === 'ar'
@@ -75,32 +72,14 @@ export default function App() {
     try { const d=await request<{user:User}>('/api/auth/verify-otp',{method:'POST',body:JSON.stringify({email,phone,code:otp})}); setUser(d.user); setTab('account') }
     catch(e) { setError((e as Error).message) }
   }
-  async function checkout(plan: string, method: 'binance'|'instapay') {
-    setError(''); setNotice(''); setPaymentBusy(true); setInstaPayment(null)
+  async function checkout(plan: string) {
+    setError(''); setNotice(''); setPaymentBusy(true)
     if (!user) { setPaymentBusy(false); setNotice('سجّل الدخول أولاً لإنشاء طلب دفع آمن.'); setTab('account'); return }
     try {
-      const d=await request<{orderId:string;method:string;amount:number;currency:string;exchangeRate?:number;paymentLink?:string;checkoutUrl?:string}>('/api/billing/intent',{method:'POST',body:JSON.stringify({plan,method})})
-      if(method==='binance' && d.checkoutUrl) window.location.assign(d.checkoutUrl)
-      else if(method==='instapay' && d.paymentLink) setInstaPayment({orderId:d.orderId,amount:d.amount,currency:'EGP',exchangeRate:d.exchangeRate||55,paymentLink:d.paymentLink})
-      else throw new Error('استجابة الدفع غير مكتملة.')
+      const d=await request<{checkoutUrl?:string}>('/api/billing/intent',{method:'POST',body:JSON.stringify({plan,method:'binance'})})
+      if(d.checkoutUrl) window.location.assign(d.checkoutUrl)
+      else throw new Error('استجابة Binance Pay غير مكتملة.')
     } catch(e) { setError((e as Error).message) } finally { setPaymentBusy(false) }
-  }
-  async function submitInstaPay() {
-    if(!instaPayment)return
-    setError(''); setNotice('')
-    try {
-      const d=await request<{ok:boolean;message:string}>('/api/billing/instapay/submit',{method:'POST',body:JSON.stringify({orderId:instaPayment.orderId,transferReference})})
-      setNotice(d.message); setInstaPayment(null); setTransferReference('')
-    } catch(e) { setError((e as Error).message) }
-  }
-  async function copyInstaPayLink() {
-    if(!instaPayment)return
-    try { await navigator.clipboard.writeText(instaPayment.paymentLink); setNotice('تم نسخ رابط InstaPay. افتحه لإتمام التحويل بالمبلغ الموضح.') }
-    catch { setError('تعذر نسخ رابط الدفع تلقائياً. يمكنك فتح رابط InstaPay مباشرة.') }
-  }
-  function openInstaPayLink() {
-    if(!instaPayment)return
-    window.open(instaPayment.paymentLink,'_blank','noopener,noreferrer')
   }
   async function loadDashboard() {
     if (!user) { setTab('account'); return }
@@ -141,7 +120,7 @@ export default function App() {
 
     {tab==='evidence' && <section className="page-section"><div className="kicker">01 / FILE EVIDENCE</div><h1 className="page-title">{labels.fileTitle}</h1><p className="page-sub">حساب محلي سريع. لا يتم رفع محتوى الملف إلى الخادم في هذه الخطوة.</p><div className="upload-panel glass" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) void fingerprint(f)}}><input ref={input} type="file" hidden onChange={e=>{const f=e.target.files?.[0];if(f)void fingerprint(f)}}/><div className="upload-symbol">⇧</div><h2>{busy?labels.hashing:proof?labels.proof:labels.drop}</h2><p>{file?file.name:labels.local}</p>{!proof?<button className="btn-primary" disabled={busy} onClick={()=>input.current?.click()}>{labels.choose} <b>＋</b></button>:<div className="proof-data"><div><small>{labels.hash}</small><code>{proof.sha256}</code></div><div><small>FILE / SIZE</small><strong>{proof.fileName} · {money(proof.fileSize)}</strong></div><div><small>CLIENT TIME</small><strong>{new Date(proof.createdAt).toLocaleString()}</strong></div><div className="proof-buttons"><button className="btn-primary" onClick={receipt}>{labels.save} ↓</button><button className="btn-ghost" onClick={()=>{setProof(null);setFile(null);if(input.current)input.current.value=''}}>{labels.another}</button></div></div>}{error&&<p className="error">{error}</p>}</div><p className="legal-note">تنبيه: SHA-256 يثبت تطابق محتوى الملف مع بصمة محفوظة، لكنه وحده لا يثبت المؤلف أو الملكية القانونية أو وقت الإنشاء. وقت الإيصال الحالي هو وقت جهازك وليس ختمًا زمنياً مستقلاً.</p></section>}
 
-    {tab==='plans' && <section className="page-section"><div className="kicker">02 / MEMBERSHIP</div><h1 className="page-title">اختر مستوى <span>حماية أعمالك</span></h1><p className="page-sub">اختر باقتك ثم وسيلة الدفع. أسعار الدولار ثابتة، ويُحسب المقابل بالجنيه بسعر 55 جنيهاً للدولار.</p><div className="plans-grid">{plans.map(p=><article className={'plan glass '+(p.featured?'featured':'')} key={p.id}>{p.featured&&<div className="popular">الأكثر قيمة</div>}<div className="plan-name">{p.name}</div><div className="price">{p.price}<small>{p.period}</small></div><div className="egp-equivalent">ما يعادل {({monthly:275,yearly:2750,lifetime:5500} as Record<string,number>)[p.id].toLocaleString('en-US')} EGP</div><p>{p.detail}</p><ul>{p.perks.map(x=><li key={x}><i>✓</i>{x}</li>)}</ul><div className="payment-actions"><button className="btn-primary" disabled={paymentBusy} onClick={()=>void checkout(p.id,'binance')}>الدفع عبر باينانس (USDT)</button><button className="btn-outline" disabled={paymentBusy} onClick={()=>void checkout(p.id,'instapay')}>الدفع عبر إنستا باي (InstaPay - EGP)</button></div></article>)}</div>{instaPayment&&<div className="insta-checkout glass"><div className="kicker">INSTAPAY / TRANSFER</div><h2>أكمل التحويل بالجنيه المصري</h2><div className="insta-amount">{instaPayment.amount.toLocaleString('en-US')} <small>EGP</small></div><p>سعر التحويل الثابت: 1 USD = {instaPayment.exchangeRate} EGP</p><p>استخدم رابط الدفع الآمن المرتبط برمز QR الخاص بحسابك. يمكنك فتحه مباشرة أو نسخه لإتمام التحويل داخل InstaPay.</p><div className="payment-actions"><button className="btn-primary" onClick={openInstaPayLink}>فتح رابط InstaPay</button><button className="btn-outline" onClick={()=>void copyInstaPayLink()}>نسخ رابط الدفع</button></div><label>مرجع التحويل بعد إتمام العملية<input value={transferReference} onChange={e=>setTransferReference(e.target.value)} placeholder="أدخل رقم مرجع التحويل" maxLength={100}/></label><button className="btn-outline full" disabled={transferReference.trim().length<6} onClick={()=>void submitInstaPay()}>إرسال مرجع التحويل للمراجعة</button><p className="legal-note">لن يُفعّل الاشتراك بمجرد إرسال المرجع؛ يتم تفعيله بعد مراجعة وصول التحويل من الإدارة.</p></div>}{notice&&<p className="notice">{notice}</p>}{error&&<p className="error">{error}</p>}<p className="legal-note">الدفع عبر Binance يتم من خلال صفحة Binance Pay الرسمية، ويُفعّل الاشتراك بعد إشعار دفع موثّق. InstaPay تحويل مباشر ويتطلب إدخال مرجع العملية ومراجعة إدارية قبل التفعيل.</p></section>}
+    {tab==='plans' && <section className="page-section"><div className="kicker">02 / MEMBERSHIP</div><h1 className="page-title">اختر مستوى <span>حماية أعمالك</span></h1><p className="page-sub">اختر باقتك ثم وسيلة الدفع. أسعار الدولار ثابتة، ويُحسب المقابل بالجنيه بسعر 55 جنيهاً للدولار.</p><div className="plans-grid">{plans.map(p=><article className={'plan glass '+(p.featured?'featured':'')} key={p.id}>{p.featured&&<div className="popular">الأكثر قيمة</div>}<div className="plan-name">{p.name}</div><div className="price">{p.price}<small>{p.period}</small></div><div className="egp-equivalent">ما يعادل {({monthly:275,yearly:2750,lifetime:5500} as Record<string,number>)[p.id].toLocaleString('en-US')} EGP</div><p>{p.detail}</p><ul>{p.perks.map(x=><li key={x}><i>✓</i>{x}</li>)}</ul><div className="payment-actions"><button className="btn-primary" disabled={paymentBusy} onClick={()=>void checkout(p.id)}>الدفع عبر باينانس (USDT)</button><a className="btn-outline" href="https://ipn.eg/C/Q/alyzopairalymisr/instapay?ISIGN=23052603MEYCIQCa+165kldG7+2KEw41HONJ5GFzrxnECQxHmS5C9oShqAIhAPSbhFHWlQ7OJd1mpVrXAf/px8K9C2gZbw5mhYW9t2FS" target="_blank" rel="noopener noreferrer">الدفع عبر إنستا باي (InstaPay - EGP) ↗</a></div></article>)}</div>{notice&&<p className="notice">{notice}</p>}{error&&<p className="error">{error}</p>}<p className="legal-note">زر InstaPay يفتح رابط الدفع مباشرة.</p></section>}
 
     {tab==='account' && <section className="page-section"><div className="kicker">03 / PERSONAL CONSOLE</div><h1 className="page-title">{user?labels.dashboard:labels.loginTitle}</h1><p className="page-sub">{user?'حالة مشروعك واشتراكك وروابطك في مكان واحد.':labels.loginDesc}</p>{!user?<div className="auth-panel glass"><label>{labels.email}<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></label><label>{labels.phone}<input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+20 1X XXX XXXX"/></label>{otpSent&&<label>{labels.code}<input inputMode="numeric" value={otp} onChange={e=>setOtp(e.target.value)} placeholder="000000" maxLength={6}/></label>}<button className="btn-primary full" onClick={()=>void(otpSent?verifyOtp():sendOtp())}>{otpSent?labels.verify:labels.send} ↗</button>{notice&&<p className="notice">{notice}</p>}{error&&<p className="error">{error}</p>}<p className="legal-note">{API?'الاتصال بالخادم متاح.':'الخادم غير مربوط حالياً؛ لن يتم عرض تسجيل دخول وهمي أو قبول رمز غير متحقق منه.'}</p></div>:<><div className="dashboard-grid"><article className="dash-card glass"><small>{labels.status}</small><strong>{user.plan||'لم يتم تفعيل باقة'}</strong><span>● {user.paymentStatus||'بانتظار الاشتراك'}</span></article><article className="dash-card glass"><small>{labels.stars}</small><strong>{stars===null?'—':stars}</strong><span>GitHub / STAMP</span></article><article className="dash-card glass"><small>{labels.renewal}</small><strong>{user.renewAt||'—'}</strong><span>{labels.payment}: {user.paymentStatus||'—'}</span></article></div><div className="links-panel glass"><div><small>{labels.repo}</small><a href={user.repoUrl||'https://github.com/zopair/STAMP'} target="_blank" rel="noreferrer">{user.repoUrl||'https://github.com/zopair/STAMP'} ↗</a></div><div><small>{labels.web}</small><a href={user.webUrl||'https://zopair.github.io/STAMP/'} target="_blank" rel="noreferrer">{user.webUrl||'https://zopair.github.io/STAMP/'} ↗</a></div></div><button className="btn-outline" onClick={()=>void logout()}>تسجيل الخروج</button></>}</section>}
     {error&&tab!=='account'&&<div className="global-error">{error}</div>}
