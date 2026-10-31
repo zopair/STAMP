@@ -31,10 +31,18 @@ app.post('/api/auth/request-otp', async c => {
   const body = await c.req.json<{email?:string;phone?:string}>()
   const email = (body.email||'').trim().toLowerCase(), phone = (body.phone||'').replace(/[\s()-]/g,'')
   if (!/^\S+@\S+\.\S+$/.test(email) || !/^\+[1-9]\d{7,14}$/.test(phone)) return json('أدخل بريدًا صحيحًا ورقم هاتف دوليًا يبدأ بعلامة +')
-  const now = Math.floor(Date.now()/1000), recent = await c.env.DB.prepare('SELECT COUNT(*) n FROM otp_codes WHERE email=? AND created_at>?').bind(email, now-900).first<{n:number}>()
-  if ((recent?.n||0)>=3) return json('تم تجاوز عدد المحاولات. حاول بعد 15 دقيقة.',429)
+  const now = Math.floor(Date.now()/1000)
+  const [emailRecent, phoneRecent] = await Promise.all([
+    c.env.DB.prepare('SELECT COUNT(*) n FROM otp_codes WHERE email=? AND created_at>?').bind(email,now-900).first<{n:number}>(),
+    c.env.DB.prepare('SELECT COUNT(*) n FROM otp_codes WHERE phone=? AND created_at>?').bind(phone,now-900).first<{n:number}>()
+  ])
+  const ip = c.req.header('CF-Connecting-IP') || ''
+  const ipHash = ip ? await hash(ip + c.env.SESSION_SECRET) : null
+  const ipRecent = ipHash ? await c.env.DB.prepare('SELECT COUNT(*) n FROM otp_codes WHERE request_ip_hash=? AND created_at>?').bind(ipHash,now-900).first<{n:number}>() : null
+  if ((emailRecent?.n||0)>=3 || (phoneRecent?.n||0)>=3 || (ipRecent?.n||0)>=15) return json('تم تجاوز عدد المحاولات. حاول بعد 15 دقيقة.',429)
+  await c.env.DB.prepare('DELETE FROM otp_codes WHERE created_at<?').bind(now-86400).run()
   const code = randomCode(), codeHash = await hash(code + c.env.SESSION_SECRET)
-  await c.env.DB.prepare('INSERT INTO otp_codes(email,phone,code_hash,expires_at,created_at) VALUES(?,?,?,?,?)').bind(email,phone,codeHash,now+600,now).run()
+  await c.env.DB.prepare('INSERT INTO otp_codes(email,phone,code_hash,expires_at,created_at,request_ip_hash) VALUES(?,?,?,?,?,?)').bind(email,phone,codeHash,now+600,now,ipHash).run()
   const mail = await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${c.env.RESEND_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({from:c.env.EMAIL_FROM,to:[email],subject:'Your STAMP verification code',html:`<p>Your STAMP verification code is <strong>${code}</strong>.</p><p>It expires in 10 minutes. Do not share it.</p>`})})
   if (!mail.ok) return json('تعذر إرسال رمز البريد. تحقق من إعداد Resend.',502)
   const wa = await fetch(`https://graph.facebook.com/${c.env.META_GRAPH_VERSION}/${c.env.META_PHONE_NUMBER_ID}/messages`,{method:'POST',headers:{Authorization:`Bearer ${c.env.META_ACCESS_TOKEN}`,'Content-Type':'application/json'},body:JSON.stringify({messaging_product:'whatsapp',to:phone,type:'template',template:{name:'stamp_otp',language:{code:'en'},components:[{type:'body',parameters:[{type:'text',text:code}]}]}})})
@@ -45,9 +53,14 @@ app.post('/api/auth/verify-otp', async c => {
   const body=await c.req.json<{email?:string;phone?:string;code?:string}>(), email=(body.email||'').trim().toLowerCase(), phone=(body.phone||'').replace(/[\s()-]/g,'')
   if (!email || !phone || !/^\d{6}$/.test(body.code||'')) return json('بيانات التحقق غير مكتملة')
   const now=Math.floor(Date.now()/1000)
-  const row=await c.env.DB.prepare('SELECT id,code_hash FROM otp_codes WHERE email=? AND phone=? AND expires_at>? AND consumed_at IS NULL ORDER BY id DESC LIMIT 1').bind(email,phone,now).first<{id:number;code_hash:string}>()
-  if (!row || await hash(body.code!+c.env.SESSION_SECRET)!==row.code_hash) return json('رمز التحقق غير صحيح أو منتهي الصلاحية',401)
-  await c.env.DB.prepare('UPDATE otp_codes SET consumed_at=? WHERE id=?').bind(now,row.id).run()
+  const row=await c.env.DB.prepare('SELECT id,code_hash,attempts FROM otp_codes WHERE email=? AND phone=? AND expires_at>? AND consumed_at IS NULL AND attempts<5 ORDER BY id DESC LIMIT 1').bind(email,phone,now).first<{id:number;code_hash:string;attempts:number}>()
+  if (!row) return json('رمز التحقق غير صحيح أو منتهي الصلاحية',401)
+  if (await hash(body.code!+c.env.SESSION_SECRET)!==row.code_hash) {
+    await c.env.DB.prepare('UPDATE otp_codes SET attempts=attempts+1 WHERE id=? AND consumed_at IS NULL AND attempts<5').bind(row.id).run()
+    return json('رمز التحقق غير صحيح أو منتهي الصلاحية',401)
+  }
+  const consumed=await c.env.DB.prepare('UPDATE otp_codes SET consumed_at=? WHERE id=? AND consumed_at IS NULL AND expires_at>? AND attempts<5').bind(now,row.id,now).run()
+  if ((consumed.meta?.changes||0)!==1) return json('تم استخدام الرمز بالفعل. اطلب رمزًا جديدًا.',409)
   const id=crypto.randomUUID()
   await c.env.DB.prepare('INSERT INTO users(id,email,phone,created_at) VALUES(?,?,?,?) ON CONFLICT(email) DO UPDATE SET phone=excluded.phone').bind(id,email,phone,now).run()
   const user=await c.env.DB.prepare('SELECT id,email,phone FROM users WHERE email=?').bind(email).first<{id:string;email:string;phone:string}>()
