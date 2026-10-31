@@ -139,9 +139,15 @@ app.post('/api/billing/intent', async c => {
       method:'POST',headers:{'Content-Type':'application/json','BinancePay-Timestamp':timestamp,'BinancePay-Nonce':nonce,'BinancePay-Certificate-SN':c.env.BINANCE_PAY_API_KEY,'BinancePay-Signature':signature},body:payload
     })
     const result=await response.json() as {status?:string;code?:string;data?:{prepayId?:string;checkoutUrl?:string};errorMessage?:string}
-    if (!response.ok || result.status!=='SUCCESS' || !result.data?.checkoutUrl || !result.data?.prepayId) return json('تعذر إنشاء طلب Binance Pay. لم يتم تفعيل الاشتراك.',502)
+    if (!response.ok || result.status!=='SUCCESS' || !result.data?.checkoutUrl || !result.data?.prepayId) {
+      await c.env.DB.prepare("UPDATE payment_orders SET status='expired',updated_at=? WHERE id=? AND status='pending'").bind(Math.floor(Date.now()/1000),id).run()
+      return json('تعذر إنشاء طلب Binance Pay. لم يتم تفعيل الاشتراك.',502)
+    }
     let checkoutUrl=''
-    try { const url=new URL(result.data.checkoutUrl); if(url.protocol!=='https:'||url.hostname!=='pay.binance.com') throw new Error(); checkoutUrl=url.toString() } catch { return json('رابط الدفع الذي أعادته Binance غير صالح.',502) }
+    try { const url=new URL(result.data.checkoutUrl); if(url.protocol!=='https:'||url.hostname!=='pay.binance.com') throw new Error(); checkoutUrl=url.toString() } catch {
+      await c.env.DB.prepare("UPDATE payment_orders SET status='expired',updated_at=? WHERE id=? AND status='pending'").bind(Math.floor(Date.now()/1000),id).run()
+      return json('رابط الدفع الذي أعادته Binance غير صالح.',502)
+    }
     await c.env.DB.prepare('UPDATE payment_orders SET provider_order_id=?,checkout_url=?,updated_at=? WHERE id=? AND status=\'pending\'')
       .bind(result.data.prepayId,checkoutUrl,Math.floor(Date.now()/1000),id).run()
     return c.json({orderId:id,method,amount:usd,currency:'USDT',checkoutUrl})
